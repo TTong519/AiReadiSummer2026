@@ -1,0 +1,15 @@
+---
+title: "Background Report"
+author: "Tyler Tong"
+date: today
+format:
+  html:
+    theme: cosmo
+    embed-resources: true
+    number-sections: true
+    toc: true
+    toc-depth: 4
+    toc-location: left
+    code-fold: false
+engine: knitr
+---
