@@ -1,0 +1,796 @@
+---
+title: "2026 Summer Internship Planner"
+subtitle: "Revised schedule with Week 0 bridge period and shifted weekly agenda"
+author: "Drs. Jin Zhou and Hua Zhou @ UCLA"
+date: today
+format:
+  html:
+    theme: cosmo
+    embed-resources: true
+    number-sections: true
+    toc: true
+    toc-depth: 4
+    toc-location: left
+    code-fold: false
+engine: knitr
+---
+
+# Week 0: Meeting Zero Before Internship Start
+
+HS participants: TBD.
+
+UCLA: Dr. Jin Zhou, Dr. Hua Zhou, graduate student mentors TBD.
+
+## Agenda
+
+- 5:00-5:15 PM: Introductions  
+Please prepare a brief self-introduction, including your name, grade, school, favorite subject or strength, and any prior coding experience.
+
+- 5:15-5:30 PM: Project Overview  
+Hua and Jin will introduce the summer project, including the AI-READI dataset, CGM/lifestyle/clinical data, and the main scientific questions we will explore.
+
+- 5:30-5:40 PM: Expectations  
+We will review expectations for weekly participation, reproducible work, communication, and project scope. We will also clarify what this project can and cannot conclude from the data.
+
+- 5:40-5:50 PM: Summer Schedule, Meeting Time, and TA Assignments  
+We will finalize or narrow down the regular weekly meeting time. We will also discuss TA responsibilities, including summarizing meeting minutes, creating a Slack channel, organizing pre-meeting check-ins with interns, and helping students troubleshoot between meetings.
+
+- 5:50-5:57 PM: Work Before Week 1  
+Software setup, background readings, AI-READI orientation, a short background report, a paper summary, and an initial toy-data or cohort plot.
+
+- 5:57-6:00 PM: Q&A
+
+## Big Picture
+
+This is a health data science internship using the AI-READI dataset as the main example. Students will learn practical data science skills by working with continuous glucose monitoring (CGM), wearable sleep/activity, and clinical lab data.
+
+The central scientific question is:
+
+> How much can CGM reveal about an individual, and can CGM patterns help distinguish different biological patterns of type 2 diabetes?
+
+The project is motivated by a simple clinical observation:
+
+> HbA1c gives an average summary of glucose over several months. CGM shows how glucose changes throughout the day and night. Two people may have the same HbA1c but very different glucose patterns, sleep-related glucose changes, or metabolic physiology.
+
+The internship will focus on three connected questions:
+
+1. What does CGM reveal beyond HbA1c?
+2. Can CGM patterns, especially during sleep and after poor sleep, reveal individual glucose vulnerability?
+3. Can CGM plus routine clinical markers help separate insulin-resistance-dominant and beta-cell-dysfunction-dominant patterns of type 2 diabetes?
+
+## Dataset
+
+We will use [AI-READI](https://aireadi.org/) as the main data science training dataset.
+
+Useful AI-READI modalities for this internship:
+
+- `participants.tsv`: participant ID, age, study group, site, recommended split, modality availability.
+- `clinical_data/measurement.csv`: HbA1c, fasting glucose, insulin, C-peptide, BMI, waist, lipids, kidney markers, liver enzymes, blood pressure, cognitive and vision-related measurements.
+- `wearable_blood_glucose`: Dexcom G6 CGM readings.
+- `wearable_activity_monitor`: Garmin Vivosmart 5 sleep, steps/activity, heart rate, stress, oxygen saturation, respiratory rate.
+- `cardiac_ecg/manifest.tsv`: ECG measurements.
+- `environment`: home environmental sensor data.
+
+## Tentative overall schedule
+
+| Timing | Focus | Main Student Output |
+|---|---|---|
+| Week 0 | Meeting Zero: introductions, project overview, expectations, weekly meeting time, and TA roles | Confirm schedule and bridge-period assignments |
+| Between Week 0 and Week 1 | Setup and background preparation | Software setup, AI-READI/CGM background memo, paper summary, and toy-data or first cohort plot |
+| Week 1 | Cohort assembly and data availability | `01_cohort_assembly.qmd`; cohort table; modality availability plots |
+| Week 2 | CGM processing and individual glucose patterns | `02_cgm_qc_features.qmd`; participant-level CGM features; example CGM plots |
+| Week 3 | Sleep and activity data processing | `03_sleep_activity_processing.qmd`; person-night sleep table; daily activity table |
+| Week 4 | Sleep and next-day glucose patterns | `04_sleep_next_day_glucose.qmd`; sleep-CGM aligned person-night analysis |
+| Week 5 | Clinical phenotypes and multimodal features | `05_clinical_phenotypes.qmd`; clinical feature table; phenotype comparisons |
+| Week 6 | Final figures, scientific story, and presentation draft | `06_final_figures_report.qmd`; draft figures, abstract, and slides |
+| Week 7 | Buffer, final presentation, and polish | Final notebook, figures, 5-minute presentation, and future publication plan |
+
+## Expectations
+
+- Spend 15-20 hours per week on the project after the regular weekly meetings begin.
+- Use the bridge period to complete setup, background reading, and the first short assignments.
+- Attend weekly 2-hour Zoom meetings with mentors.
+- Use Slack for questions and progress updates.
+- Work in Quarto or RMarkdown for reproducibility.
+- Keep all analysis code organized in a project folder and push everything to Git.
+- Present progress every week, even when results are incomplete.
+- Ask for help early when code or data structure is confusing.
+
+Each weekly presentation should include:
+
+- what was attempted;
+- what worked;
+- what did not work;
+- one figure or table;
+- one question for mentors;
+- next steps.
+
+
+## Summer Schedule
+
+- Travel days
+
+- Planed meeting time, etc. 
+
+
+## Work Between Week 0 and Week 1
+
+### Before Week 1: Setup, Reproducible Workflow, and Background Report
+
+Before the first week of the internship, please complete the tasks below. The goal is for everyone to be able to use R, RStudio, Git/GitHub, and R Markdown/Quarto to create and share reproducible work.
+
+**Goals**
+
+By the start of week 1, you should be able to:
+
+- Use Git and GitHub for version control
+- Create a GitHub repository for this internship
+- Create an RStudio Project
+- Organize a reproducible project folder
+- Commit and push your work to GitHub
+- Use R Markdown or Quarto to present code, results, figures, and written interpretation
+- Begin learning the scientific background for continuous glucose monitoring, type 2 diabetes, and AI-READI
+
+#### Set Up Your Tools
+
+Please install or create accounts for:
+
+- R
+- RStudio Desktop
+- Git
+- GitHub account
+
+Then connect Git/GitHub with RStudio.
+
+Helpful guide:
+
+- [Version Control in RStudio](https://docs.posit.co/ide/user/ide/guide/tools/version-control.html)
+
+#### Create Your Internship Repository
+
+Create a GitHub repository for this internship. You may name it something like:
+
+```text
+summer-internship-2026
+```
+
+Inside the repository, create an RStudio Project.
+
+Your repository should include:
+
+- `README.md`
+- an `.Rproj` file
+- `00_background_report.qmd`
+- the rendered output from your Quarto file, such as `.html`
+- organized project folders
+
+#### Organize Your Project Folder
+
+Create a reproducible project folder with the following structure:
+
+```text
+summer-internship-2026/
+├── data/
+├── code/
+├── notebooks/
+├── figures/
+├── tables/
+├── slides/
+├── README.md
+├── 00_background_report.qmd
+└── summer-internship-2026.Rproj
+```
+
+Suggested folder purposes:
+
+- `data/`: raw or processed data files, if provided
+- `code/`: R scripts or reusable code
+- `notebooks/`: exploratory analysis files
+- `figures/`: saved plots and images
+- `tables/`: saved tables or summary outputs
+- `slides/`: presentation materials
+
+Do not upload private, sensitive, or restricted data to GitHub.
+
+#### Create `00_background_report.qmd`
+
+Create a Quarto file named:
+
+```text
+00_background_report.qmd
+```
+
+This file should include both written background and a small R exercise.
+
+Your report should include the following sections:
+
+A. Introduction
+
+Write a short introduction about yourself and your goals for the internship.
+
+B. Reproducible Research
+
+Write a short paragraph answering:
+
+**What does reproducible research mean to me?**
+
+C. Small R Exercise
+
+Include:
+
+- One code chunk that loads an R package
+- One small data visualization using `ggplot2`
+- One short written interpretation of the plot
+
+You may use a built-in dataset such as:
+
+- `mtcars`
+- `airquality`
+- `iris`
+- `palmerpenguins`
+
+D. Background Memo
+
+Write a one-page background memo answering:
+
+**What can continuous glucose monitoring, or CGM, measure that HbA1c cannot?**
+
+Your memo may discuss ideas such as glucose variability, time in range, post-meal glucose spikes, hypoglycemia, daily patterns, and short-term responses to food, sleep, stress, exercise, or medication.
+
+E. Paper Summary
+
+Choose one assigned scientific paper and write a one-page summary.
+
+Your summary should include:
+
+- Main research question
+- Data used
+- Methods
+- Key findings
+- Limitations
+
+F. AI-READI Reflection
+
+Write exactly five sentences explaining:
+
+**What can AI-READI help researchers understand, and what can it not prove?**
+
+In your answer, think about association versus causation, observational data, measurement limits, confounding, and generalizability.
+
+G. Epidemiology Concepts
+
+Answer the following questions briefly:
+
+1. What is the difference between prospective and retrospective studies?
+2. What is the difference between case-control and longitudinal/cohort studies?
+3. Based on your first look at AI-READI, what kinds of data are collected?
+
+A few sentences for each question is enough.
+
+#### Git and GitHub Requirements
+
+Make at least 2 commits and push them to GitHub.
+
+Suggested commits:
+
+```text
+Initial project setup
+Add background report
+```
+
+Your final GitHub repository should show:
+
+- Organized folders
+- `README.md`
+- `00_background_report.qmd`
+- Rendered report output, such as `00_background_report.html`
+- At least 2 commits
+
+#### Required Readings
+
+Please read or skim the following before week 1:
+
+- ModernDive: [Getting Started with R and RStudio](https://moderndive.com/1-getting-started.html)
+- R-Ladies Sydney: [Basic Basics](https://rladiessydney.org/courses/ryouwithme/basicbasics)
+- Posit: [Getting Started with R Markdown](https://posit.co/resources/videos/getting-started-with-r-markdown/)
+- Posit: [Version Control in RStudio](https://docs.posit.co/ide/user/ide/guide/tools/version-control.html)
+- Quarto: [Get Started](https://quarto.org/docs/get-started/)
+- AI-READI: [Dataset Documentation](https://docs.aireadi.org/)
+
+#### Optional Reference Readings
+
+Use these as references when needed:
+
+- [R for Data Science, 2e](https://r4ds.hadley.nz/), especially the data visualization chapters
+- Additional tutorials on Git, GitHub, reproducible workflow, R Markdown, and Quarto
+
+#### Suggested Scientific Readings
+
+These readings are recommended for background. We will discuss them more during the internship.
+
+- He et al. 2026, *Defining Clinically Interpretable Glycemic Profiles Using Continuous Glucose Monitoring in Type 2 Diabetes*
+- Park et al. 2025, *High-resolution lifestyle profiling and metabolic subphenotypes of type 2 diabetes*
+- Carletti et al. 2025, *Multimodal AI correlates of glucose spikes in people with normal glucose regulation, pre-diabetes and type 2 diabetes*
+
+### Concepts To Review
+
+- What is type 2 diabetes?
+- What is HbA1c?
+- What is continuous glucose monitoring?
+- What are time in range, time above range, and glucose variability?
+- What is sleep duration and sleep efficiency?
+- What is insulin resistance?
+- What is beta-cell dysfunction?
+
+### Deliverable Due Before Week 1
+
+Please submit:
+
+- Your GitHub repository link
+- Your rendered `00_background_report.html`
+- A brief note about any setup problems you ran into
+
+### Completion Checklist
+
+Before week 1, make sure you have:
+
+- [ ] Installed R
+- [ ] Installed RStudio
+- [ ] Installed Git
+- [ ] Created a GitHub account
+- [ ] Created an internship GitHub repository
+- [ ] Created an RStudio Project
+- [ ] Created folders: `data/`, `code/`, `notebooks/`, `figures/`, `tables/`, and `slides/`
+- [ ] Created `00_background_report.qmd`
+- [ ] Added a short personal introduction
+- [ ] Added a reproducible research reflection
+- [ ] Added one small R visualization
+- [ ] Wrote the CGM versus HbA1c background memo
+- [ ] Wrote one assigned paper summary
+- [ ] Wrote five sentences about what AI-READI can and cannot prove
+- [ ] Answered the epidemiology concept questions
+- [ ] Rendered the Quarto file to HTML
+- [ ] Made at least 2 commits
+- [ ] Pushed the repository to GitHub
+- [ ] Submitted your repository link and rendered report
+
+
+# Week 1: Cohort Assembly and Data Availability
+
+## Agenda
+
+Students report bridge-period progress on:
+
+- R, RStudio, Quarto, and package setup;
+- AI-READI background;
+- the background memo on CGM versus HbA1c;
+- one assigned-paper summary;
+- one toy-data plot or first cohort plot;
+- questions about diabetes, CGM, AI-READI, or reproducible workflow.
+
+Mentor discussion:
+
+- What is a participant-level table?
+- Why do we need one row per participant for many analyses?
+- What is missingness?
+- Why do data availability plots matter before modeling?
+- What can the AI-READI mini dataset support, and what should not be overinterpreted?
+
+Technical topic:
+
+- Reading tabular files.
+- Filtering rows.
+- Selecting columns.
+- Joining tables.
+- Summarizing groups.
+- Creating a clean project workflow in Quarto.
+
+## In-Meeting Exercise
+
+Build the first AI-READI cohort table with:
+
+- participant ID;
+- age;
+- study group;
+- clinical site;
+- recommended split;
+- CGM availability;
+- wearable availability;
+- clinical data availability;
+- average CGM glucose from the CGM manifest;
+- average daily steps from the wearable manifest if available.
+
+## TODOs
+
+- Read [R for Data Science: Data transformation](https://r4ds.hadley.nz/data-transform).
+- Read [R for Data Science: Joins](https://r4ds.hadley.nz/joins).
+- Create `01_cohort_assembly.qmd`.
+- Produce:
+  - Table 1: participant counts by study group.
+  - Figure 1: modality availability heatmap.
+  - Figure 2: average CGM glucose by study group.
+  - Figure 3: average daily steps by study group.
+- Write a short paragraph:
+
+> Why should we inspect missing data before asking a scientific question?
+
+# Week 2: CGM Processing and Individual Glucose Patterns
+
+## Agenda
+
+Students report progress on:
+
+- cohort table;
+- modality availability;
+- first plots;
+- questions about file paths and joins.
+
+Scientific discussion:
+
+- What does CGM measure?
+- What is time in range?
+- What is time above 180 mg/dL?
+- What is coefficient of variation?
+- Why can two people with the same HbA1c have different CGM curves?
+
+Technical topic:
+
+- Reading one participant's Dexcom G6 JSON file.
+- Handling timestamps.
+- Handling out-of-range glucose values.
+- Making individual CGM plots.
+- Making an ambulatory glucose profile (AGP).
+
+## In-Meeting Exercise
+
+For three selected participants:
+
+- plot the raw CGM time series;
+- plot an AGP-style 24-hour glucose profile;
+- compute mean glucose, standard deviation, coefficient of variation, time in range, time above 180, and time below 70.
+
+## TODOs
+
+- Read [R for Data Science: Dates and times](https://r4ds.hadley.nz/datetimes).
+- Read the AI-READI CGM documentation.
+- Create `02_cgm_qc_features.qmd`.
+- Build a participant-level CGM feature table.
+- Required CGM features:
+  - number of readings;
+  - number of valid CGM days;
+  - mean glucose;
+  - glucose standard deviation;
+  - coefficient of variation;
+  - time in range 70-180;
+  - time above 180;
+  - time above 250;
+  - time below 70;
+  - time below 54.
+- Create a figure showing three individuals with similar HbA1c but different CGM patterns, if examples can be found.
+
+# Week 3: Sleep and Activity Data Processing
+
+## Agenda
+
+Students report progress on:
+
+- CGM quality control;
+- individual CGM plots;
+- participant-level CGM feature table;
+- examples of similar HbA1c but different CGM patterns.
+
+Scientific discussion:
+
+- What does it mean for CGM to reveal individual-level physiology?
+- Why are nighttime and sleep windows interesting?
+- What is a "quiet physiology" window?
+- Why should we avoid claiming meal-related effects without meal timestamps?
+
+Technical topic:
+
+- Reading Garmin sleep JSON files.
+- Reconstructing sleep nights from sleep-stage segments.
+- Computing nightly sleep features.
+- Aligning sleep nights with CGM.
+
+## In-Meeting Exercise
+
+For one participant:
+
+- draw a hypnogram;
+- calculate total sleep time;
+- calculate time in bed;
+- calculate sleep efficiency;
+- plot CGM during sleep.
+
+## TODOs
+
+- Create `03_sleep_activity_processing.qmd`.
+- Build a person-night sleep table with:
+  - participant ID;
+  - sleep night;
+  - bedtime;
+  - wake time;
+  - total sleep time;
+  - time in bed;
+  - sleep efficiency;
+  - awake time after sleep onset;
+  - percent light/deep/REM/awake, if available.
+- Build a daily activity table with:
+  - participant ID;
+  - date;
+  - total steps;
+  - active calories;
+  - average heart rate if available.
+- Make:
+  - a sleep duration plot;
+  - a sleep timing plot;
+  - a daily steps plot;
+  - a plot showing CGM during sleep for selected participants.
+
+# Week 4: Sleep and Next-Day Glucose Patterns
+
+## Agenda
+
+Students report progress on:
+
+- sleep table;
+- daily activity table;
+- sleep-CGM alignment;
+- problems with timestamps and time zones.
+
+Scientific discussion:
+
+- Does a bad night of sleep predict worse glucose the next day?
+- Why is this question easy to explain?
+- Why is this question not enough by itself for a top-tier paper?
+- How can sleep be used as a natural stress test of metabolic vulnerability?
+
+Research question for the week:
+
+> Within the same person, is next-day glucose worse after shorter or less efficient sleep nights?
+
+Technical topic:
+
+- Person-night analysis.
+- Within-participant comparison.
+- Defining worse versus better sleep using each participant's own median sleep.
+- Defining next-day glucose windows.
+
+## In-Meeting Exercise
+
+For participants with both sleep and CGM:
+
+- split nights into worse sleep and better sleep within each participant;
+- define the next-day CGM window after wake time;
+- compare next-day peak glucose, mean glucose, time above 180, and time in range.
+
+## TODOs
+
+- Create `04_sleep_next_day_glucose.qmd`.
+- Build a person-night table linking:
+  - previous night's sleep features;
+  - next-day CGM features;
+  - same-day activity features;
+  - participant study group.
+- Produce:
+  - slopegraph comparing worse-sleep and better-sleep nights within participants;
+  - boxplot of within-person glucose differences;
+  - plot stratified by study group;
+  - example participant figure showing sleep nights and next-day glucose.
+- Write a limitations paragraph:
+  - no causal claim;
+  - no meal timestamps;
+  - medication timing is not fully available in public data;
+  - CGM and Garmin are consumer/wearable measurements;
+  - AI-READI is cross-sectional.
+
+# Week 5: Clinical Phenotypes and Multimodal Features
+
+## Agenda
+
+Students report progress on:
+
+- sleep-to-next-day glucose analysis;
+- within-person plots;
+- limitations.
+
+Scientific discussion:
+
+- What are insulin resistance and beta-cell dysfunction?
+- How can fasting glucose, insulin, and C-peptide help describe diabetes physiology?
+- Why should we not simply classify treatment groups?
+- Why do we need interpretable features instead of a black-box score?
+
+Research question for the week:
+
+> Do CGM and sleep-conditioned CGM features differ across biomarker-defined diabetes physiology?
+
+Technical topic:
+
+- Extracting clinical labs from `measurement.csv`.
+- Reshaping long clinical tables into wide participant-level tables.
+- Creating simple physiological markers.
+- Comparing models or feature sets without overclaiming.
+
+## In-Meeting Exercise
+
+Build a clinical feature table containing:
+
+- HbA1c;
+- fasting glucose;
+- insulin;
+- C-peptide;
+- BMI;
+- waist circumference;
+- triglycerides;
+- HDL;
+- LDL;
+- liver enzymes;
+- creatinine or eGFR-related markers if available.
+
+Then link it to:
+
+- CGM feature table;
+- sleep feature table;
+- activity feature table.
+
+## TODOs
+
+- Create `05_clinical_phenotypes.qmd`.
+- Define a simple, prespecified physiological phenotype framework:
+  - insulin-resistance-dominant;
+  - beta-cell-dysfunction-dominant;
+  - mixed/intermediate.
+- Use insulin and C-peptide as phenotype-defining variables, not as predictors in the same model.
+- Compare feature panels:
+  - HbA1c and routine clinical variables;
+  - standard CGM features;
+  - sleep-conditioned CGM features;
+  - CGM plus sleep/activity context.
+- Produce:
+  - scatterplot of HbA1c versus CGM metrics;
+  - heatmap of feature correlations;
+  - figure showing whether sleep-conditioned CGM features separate phenotype groups;
+  - example profiles for selected participants.
+
+# Week 6: Final Figures, Scientific Story, and Presentation
+
+## Agenda
+
+Students report progress on:
+
+- cleaned analysis tables;
+- CGM features;
+- sleep/activity features;
+- clinical phenotype features;
+- main figures.
+
+Scientific discussion:
+
+- What did CGM reveal beyond HbA1c?
+- What did sleep/activity context add?
+- What patterns looked robust?
+- What patterns were probably artifacts or confounded?
+- What would be needed for a publishable follow-up study?
+
+Technical topic:
+
+- Final figure polishing.
+- Writing results clearly.
+- Separating observation from interpretation.
+- Preparing a short science presentation.
+
+## Final Deliverable Drafts
+
+Each student or group should bring drafts of:
+
+- one reproducible Quarto analysis notebook;
+- one cleaned analysis table dictionary;
+- 6-8 polished figures;
+- one 250-word abstract;
+- one 5-minute presentation;
+- one-page "future publication plan" memo.
+
+Recommended final figures:
+
+1. AI-READI study design and data flow.
+2. Modality availability and analysis cohort.
+3. Examples of individual CGM patterns.
+4. HbA1c versus CGM: same average, different patterns.
+5. Sleep and next-day glucose within participant.
+6. Overnight or sleep-conditioned CGM patterns.
+7. Clinical phenotype markers and CGM features.
+8. Final conceptual figure: what CGM reveals about individuals and diabetes types.
+
+# Week 7: Buffer, Final Presentation, and Polish
+
+## Agenda
+
+Week 7 is intentionally lighter because the main scientific content has been moved up by one week. Use this meeting for catch-up, final presentations, reproducibility checks, and deciding which pieces are strong enough for future manuscript or science-fair development.
+
+Students give final presentations:
+
+- 5 minutes for the main story;
+- 2 minutes for questions;
+- one slide on limitations;
+- one slide on next steps.
+
+Mentor review:
+
+- Is the main scientific claim clear and appropriately cautious?
+- Are figures understandable without long explanation?
+- Are methods reproducible from the notebooks?
+- Are limitations stated honestly?
+- What should be kept for future publication planning?
+- What should be treated as training work only?
+
+## Final Deliverables
+
+Each student or group should submit:
+
+- final reproducible Quarto analysis notebook;
+- cleaned analysis table dictionary;
+- final figures;
+- 250-word abstract;
+- 5-minute presentation;
+- one-page "future publication plan" memo.
+
+## Final Message Students Should Be Able To Explain
+
+By the end of the internship, students should be able to say:
+
+> HbA1c is useful, but it compresses glucose into one number. CGM shows when glucose is high, low, stable, or variable. By combining CGM with sleep, activity, and routine labs in AI-READI, we can study whether glucose patterns reveal individual differences and possible biological types of type 2 diabetes.
+
+Students should also be able to explain what the project cannot prove:
+
+- AI-READI is cross-sectional.
+- The analysis is observational.
+- Sleep-glucose patterns are associations, not proof of causation.
+- Wearable sleep stages are imperfect.
+- Meal timing and medication timing are limited.
+- Future adverse-event prediction requires longitudinal data.
+
+# Suggested GitHub Repo Structure
+
+```text
+aireadi-cgm-internship/
+  README.md
+  data/
+    raw/
+    processed/
+  code/
+    00_setup.R
+    cgm_functions.R
+    sleep_functions.R
+    clinical_functions.R
+    plotting_functions.R
+  notebooks/
+    00_background_report.qmd
+    01_cohort_assembly.qmd
+    02_cgm_qc_features.qmd
+    03_sleep_activity_processing.qmd
+    04_sleep_next_day_glucose.qmd
+    05_clinical_phenotypes.qmd
+    06_final_figures_report.qmd
+  figures/
+  tables/
+  slides/
+  manuscript_notes/
+```
+
+# Mentor Notes
+
+This seven-week internship should be treated as a data science skills apprenticeship with a publishable research direction, not as a guarantee of a completed manuscript.
+
+The research direction that may later become publishable is:
+
+> Integrating CGM, Lifestyle, and Biomarkers to Identify Metabolic Phenotypes in Type 2 Diabetes
+
+The student-facing question is:
+
+> Can CGM data, together with sleep and activity information, and other factors such as environment, help us understand why people with type 2 diabetes show different glucose patterns?
+
+The longer-term bridge to Dr. Zhou's research program is:
+
+> Build interpretable, multimodal representations of CGM, sleep, activity, and biomarker data in AI-READI, then use modern AI methods to evaluate their ability to predict adverse-event risk in longitudinal diabetes datasets.
