@@ -23,20 +23,20 @@ UCLA: Dr. Jin Zhou, Dr. Hua Zhou, graduate student mentors TBD.
 
 ## Agenda
 
-- 5:00-5:15 PM: Introductions  
-Please prepare a brief self-introduction, including your name, grade, school, favorite subject or strength, and any prior coding experience.
+- 5:00-5:15 PM: Introductions\
+  Please prepare a brief self-introduction, including your name, grade, school, favorite subject or strength, and any prior coding experience.
 
-- 5:15-5:30 PM: Project Overview  
-Hua and Jin will introduce the summer project, including the AI-READI dataset, CGM/lifestyle/clinical data, and the main scientific questions we will explore.
+- 5:15-5:30 PM: Project Overview\
+  Hua and Jin will introduce the summer project, including the AI-READI dataset, CGM/lifestyle/clinical data, and the main scientific questions we will explore.
 
-- 5:30-5:40 PM: Expectations  
-We will review expectations for weekly participation, reproducible work, communication, and project scope. We will also clarify what this project can and cannot conclude from the data.
+- 5:30-5:40 PM: Expectations\
+  We will review expectations for weekly participation, reproducible work, communication, and project scope. We will also clarify what this project can and cannot conclude from the data.
 
-- 5:40-5:50 PM: Summer Schedule, Meeting Time, and TA Assignments  
-We will finalize or narrow down the regular weekly meeting time. We will also discuss TA responsibilities, including summarizing meeting minutes, creating a Slack channel, organizing pre-meeting check-ins with interns, and helping students troubleshoot between meetings.
+- 5:40-5:50 PM: Summer Schedule, Meeting Time, and TA Assignments\
+  We will finalize or narrow down the regular weekly meeting time. We will also discuss TA responsibilities, including summarizing meeting minutes, creating a Slack channel, organizing pre-meeting check-ins with interns, and helping students troubleshoot between meetings.
 
-- 5:50-5:57 PM: Work Before Week 1  
-Software setup, background readings, AI-READI orientation, a short background report, a paper summary, and an initial toy-data or cohort plot.
+- 5:50-5:57 PM: Work Before Week 1\
+  Software setup, background readings, AI-READI orientation, a short background report, a paper summary, and an initial toy-data or cohort plot.
 
 - 5:57-6:00 PM: Q&A
 
@@ -54,9 +54,9 @@ The project is motivated by a simple clinical observation:
 
 The internship will focus on three connected questions:
 
-1. What does CGM reveal beyond HbA1c?
-2. Can CGM patterns, especially during sleep and after poor sleep, reveal individual glucose vulnerability?
-3. Can CGM plus routine clinical markers help separate insulin-resistance-dominant and beta-cell-dysfunction-dominant patterns of type 2 diabetes?
+1.  What does CGM reveal beyond HbA1c?
+2.  Can CGM patterns, especially during sleep and after poor sleep, reveal individual glucose vulnerability?
+3.  Can CGM plus routine clinical markers help separate insulin-resistance-dominant and beta-cell-dysfunction-dominant patterns of type 2 diabetes?
 
 ## Dataset
 
@@ -74,7 +74,7 @@ Useful AI-READI modalities for this internship:
 ## Tentative overall schedule
 
 | Timing | Focus | Main Student Output |
-|---|---|---|
+|------------------------|------------------------|------------------------|
 | Week 0 | Meeting Zero: introductions, project overview, expectations, weekly meeting time, and TA roles | Confirm schedule and bridge-period assignments |
 | Between Week 0 and Week 1 | Setup and background preparation | Software setup, AI-READI/CGM background memo, paper summary, and toy-data or first cohort plot |
 | Week 1 | Cohort assembly and data availability | `01_cohort_assembly.qmd`; cohort table; modality availability plots |
@@ -105,13 +105,11 @@ Each weekly presentation should include:
 - one question for mentors;
 - next steps.
 
-
 ## Summer Schedule
 
 - Travel days
 
-- Planed meeting time, etc. 
-
+- Planed meeting time, etc.
 
 ## Work Between Week 0 and Week 1
 
@@ -150,7 +148,7 @@ Helpful guide:
 
 Create a GitHub repository for this internship. You may name it something like:
 
-```text
+``` text
 summer-internship-2026
 ```
 
@@ -168,7 +166,7 @@ Your repository should include:
 
 Create a reproducible project folder with the following structure:
 
-```text
+``` text
 summer-internship-2026/
 ├── data/
 ├── code/
@@ -196,7 +194,7 @@ Do not upload private, sensitive, or restricted data to GitHub.
 
 Create a Quarto file named:
 
-```text
+``` text
 00_background_report.qmd
 ```
 
@@ -261,9 +259,9 @@ G. Epidemiology Concepts
 
 Answer the following questions briefly:
 
-1. What is the difference between prospective and retrospective studies?
-2. What is the difference between case-control and longitudinal/cohort studies?
-3. Based on your first look at AI-READI, what kinds of data are collected?
+1.  What is the difference between prospective and retrospective studies?
+2.  What is the difference between case-control and longitudinal/cohort studies?
+3.  Based on your first look at AI-READI, what kinds of data are collected?
 
 A few sentences for each question is enough.
 
@@ -273,7 +271,7 @@ Make at least 2 commits and push them to GitHub.
 
 Suggested commits:
 
-```text
+``` text
 Initial project setup
 Add background report
 ```
@@ -353,7 +351,6 @@ Before week 1, make sure you have:
 - [ ] Made at least 2 commits
 - [ ] Pushed the repository to GitHub
 - [ ] Submitted your repository link and rendered report
-
 
 # Week 1: Cohort Assembly and Data Availability
 
@@ -694,14 +691,14 @@ Each student or group should bring drafts of:
 
 Recommended final figures:
 
-1. AI-READI study design and data flow.
-2. Modality availability and analysis cohort.
-3. Examples of individual CGM patterns.
-4. HbA1c versus CGM: same average, different patterns.
-5. Sleep and next-day glucose within participant.
-6. Overnight or sleep-conditioned CGM patterns.
-7. Clinical phenotype markers and CGM features.
-8. Final conceptual figure: what CGM reveals about individuals and diabetes types.
+1.  AI-READI study design and data flow.
+2.  Modality availability and analysis cohort.
+3.  Examples of individual CGM patterns.
+4.  HbA1c versus CGM: same average, different patterns.
+5.  Sleep and next-day glucose within participant.
+6.  Overnight or sleep-conditioned CGM patterns.
+7.  Clinical phenotype markers and CGM features.
+8.  Final conceptual figure: what CGM reveals about individuals and diabetes types.
 
 # Week 7: Buffer, Final Presentation, and Polish
 
@@ -753,7 +750,7 @@ Students should also be able to explain what the project cannot prove:
 
 # Suggested GitHub Repo Structure
 
-```text
+``` text
 aireadi-cgm-internship/
   README.md
   data/

@@ -13,3 +13,11 @@ format:
     code-fold: false
 engine: knitr
 ---
+
+# Introduction
+
+My name is Tyler Tong, and I am a rising 10th grader at Geffen Academy this year. My favorite courses in school are science, math, and computer science. I have a lot of prior experience in coding with python, C#, and C++.
+
+# Reproducible Research
+
+My definition of reproducible research is research and scientific work that can be reliably reproduced by anyone, and where the instructions and other knowledge needed to reproduce said research is also available to anyone. This will allow anybody to verify the work done, allowing it to be verified much more thoroughly. It can also help other researchers, as the techniques used can be reproduced and reworked to benefit others.
