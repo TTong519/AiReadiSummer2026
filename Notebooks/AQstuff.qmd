@@ -34,4 +34,12 @@ ggplot() +
   scale_x_date(date_breaks = "1 month", date_labels = "%B", expand = c(0.05, 0)) + labs(title = "New York Air Quality, 1973, May - October", y = "Ozone", x = "Date")
 ```
 
-The produced graph shows the relationship between ozone levels, time of year, and temperature(above 85, below 75, and between 85 and 75). I was able to produce this by first, using the mutate function from the dplyr library with functions from the lubridate library to map the raw month and day numbers to the R Date class, then using the scale_x_date function provided by ggplot2 to be able to graph date as one axis. Next, to turn the ram Temp values to discrete classifications, I used the mutate function with the case_when function. Then, using the geom_point and geom_smooth functions, graphed the final result.
+The produced graph shows the relationship between ozone levels, time of year, and temperature(above 85, below 75, and between 85 and 75). There were two main challenges:
+
+- The month and date values were separated, so unification was needed before graphing.
+
+  - solved by using the mutate function from the dplyr library with functions from the lubridate library to map the raw month and day numbers to the R Date class, then using the scale_x_date function provided by ggplot2.
+
+- Raw temperature values had to be classified into medium, high, and low to better illustrate relationships.
+
+  - Solved by using the mutate function with the case_when function.
