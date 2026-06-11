@@ -1,0 +1,36 @@
+---
+title: "AQ Notes"
+author: "Tyler Tong"
+date: today
+format:
+  html:
+    theme: cosmo
+    embed-resources: true
+    number-sections: true
+    toc: true
+    toc-depth: 4
+    toc-location: left
+    code-fold: false
+engine: knitr
+---
+
+# AQ in New York, 1973 May - October
+
+I decided to graph the built in airquality data set to practice R. The final code is:
+
+``` r
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+aqdata <- airquality
+aqdata <- mutate(aqdata, unified_date = make_date(year = 1973, month = Month, day = Day))
+aqdata <- mutate(aqdata, Heat = case_when(Temp >= 85 ~ "High", Temp < 75 ~ "Low", TRUE ~ "Mid"))
+ggplot() +
+  geom_point(size = 1, alpha = 0.8, data = aqdata, aes(y = Ozone, x = unified_date, colour = Heat)) +
+  geom_smooth(data = aqdata, aes(y = Ozone, x = unified_date, colour = Heat, method = "lm")) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%B", expand = c(0.05, 0)) + labs(title = "New York Air Quality, 1973, May - October", y = "Ozone", x = "Date")
+```
+
+Producing: 
+![](~/AiReadi/AiReadiSummer2026/Figures/1973NYAQ.png)
+The produced graph shows the relationship between ozone levels, time of year, and temperature(above 85, below 75, and between 85 and 75). I was able to produce this by first, using the mutate function from the dplyr library with functions from the lubridate library to map the raw month and day numbers to the R Date class, then using the scale_x_date function provided by ggplot2 to be able to graph date as one axis. Next, to turn the ram Temp values to discrete classifications, I used the mutate function with the case_when function. Then, using the geom_point and geom_smooth functions, graphed the final result.
