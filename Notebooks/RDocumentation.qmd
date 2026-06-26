@@ -1,0 +1,114 @@
+---
+title: "R Documentation Notes"
+author: "Tyelr Tong"
+date: today
+format:
+  html:
+    theme: cosmo
+    embed-resources: true
+    number-sections: true
+    toc: true
+    toc-depth: 4
+    toc-location: left
+    code-fold: false
+engine: knitr
+---
+# Basic Info
+## Datatypes
+ - Integers: Integer values
+ - Doubles/Numerics: Decimal values
+ - Logicals: Booleans, TRUE or FALSE
+ - Characters: A set of characters
+ - Vectors: a 1D set of values. Created using the c() function.
+ - Factors: Categorical data, represented as strings.
+ - Data Frames: A 2D set of data in the shape of a rectangle. Created with the data.frame() function
+
+```{r}
+i = 1
+# or
+i <- 1 
+# i is a integer with value 1
+d <- 3.14
+# d is a double with value 3.14
+l <- TRUE
+# l is a logical with value TRUE
+c <- "hello world"
+# c is a character with value "hello world"
+v <- c(1, 2, 3, 4, 5)
+# v is a vector containing the set 1, 2, 3, 4, 5
+d <- data.frame(
+  Integers = c(1, 2, 3),
+  Chars = c("A", "B", "C"),
+  Logicals = c(TRUE, FALSE, TRUE)
+)
+# d is a 3x3 data frame with three variables, each with three values.
+```
+
+## Conditionals
+ - & for AND and | for OR
+ - ==, <=, >=, <, < for comparisons, they all return Logicals
+```{r}
+a <- FALSE
+b <- TRUE
+c <- a & b
+# c is FALSE
+c <- a | b
+# c is TRUE
+i <- 5
+j <- 10
+k <- i > j
+# k is FALSE
+#l <- i = j
+#This throws an error because = is used for assigning values to things. Instead:
+l <- i == j
+# l is FALSE
+```
+
+## Functions
+ - Do things in R.
+
+```{r}
+```
+
+ - Some have default values that can be changed.
+
+```{r}
+```
+ 
+## Errors, Warnings, and Messages
+ - All errors, warnings and messages are in red.
+ - Errors all start with "Error in ..." followed by where the error is and a explanation for why. Code will NOT work when there are errors.
+ - Warnings all start with "Warning: " and then explain the warning. In general, code will still work, but there will be caveats, generally explained in the warning.
+ - If there is red text that does not start with "Error in ..." or "Warning: ", it is a message. Messages are in general harmless diagnostics.
+
+## Packages
+ - Extend functionality by providing new functions, data, and documentation.
+ - Packages can be installed using the Packages tab in R Studio.
+ - Packages can also be installed with "install.packages("package_name_here")".
+ - Packages must be loaded after installing to use them.
+ - This can be done with "library("package_name_here")"
+ - You MUST load the package you want to use EVERY TIME you open RStudio.
+
+```{r, message=FALSE}
+# install.packages("tidyverse")
+library(tidyverse)
+```
+ 
+## More on Data Frames
+ - The View() function, which is built in to R, opens RStudio's data viewer when called on a data frame.
+ - The glimpse() function, provided by the dplyr package, prints a representation of the data frame provided. 
+ - The kable() function, provided by the knitr package, also prints a representation of the data frame provided, but the output is more reader-friendly than that of the glimpse() function.
+ - The $ operator lets you get all the values of a variable from a data frame.
+ 
+# The Tidyverse
+## Data Visualization
+### The Grammar of Graphics
+ - The grammar of graphics is a theoretical framework for data visualization, serving as the foundation of the package ggplot2.
+ - In languages, there are multiple components to a sentence. These components must be put together in a certain way in order to construct a correct sentence. The grammar of graphics is like a set of rules, just like how grammar functions in language, to put pieces of a infographic together.
+ 
+### The Components of Grammar
+ - data: the dataset containing the variable of interest.
+ - geom: the geometric object in question
+ - aes: the aesthetic attributes of the geometric object. Includes position, color, shape, and size. Aesthetic attributes are mapped to variables in the dataset.
+
+### The Five Named Graphs

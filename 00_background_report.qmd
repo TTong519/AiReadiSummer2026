@@ -21,3 +21,223 @@ My name is Tyler Tong, and I am a rising 10th grader at Geffen Academy this year
 # Reproducible Research
 
 My definition of reproducible research is research and scientific work that can be reliably reproduced by anyone, and where the instructions and other knowledge needed to reproduce said research is also available to anyone. This will allow anybody to verify the work done, allowing it to be verified much more thoroughly. It can also help other researchers, as the techniques used can be reproduced and reworked to benefit others.
+
+# AQ in New York, 1973 May - October
+
+I decided to graph the built in airquality data set to practice R. The final code is:
+
+```{r}
+#| echo: true
+#| message: false
+#| warning: false
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+aqdata <- airquality %>%
+  mutate(
+    unified_date = make_date(year = 1973, month = Month, day = Day),
+    num_date = as.numeric(unified_date)
+  ) %>%
+  filter(!is.na(Ozone) & !is.na(Temp) & !is.na(unified_date))
+grid_seq <- data.frame(
+  unified_date = seq(min(aqdata$unified_date), max(aqdata$unified_date), length.out = 100000)
+) %>%
+  mutate(num_date = as.numeric(unified_date))
+model_ozone_loess <- loess(Ozone ~ num_date, data = aqdata, span = 0.75)
+model_temp_loess  <- loess(Temp ~ num_date, data = aqdata, span = 0.75)
+predicted_data_loess <- grid_seq %>%
+  mutate(
+    Ozone = predict(model_ozone_loess, newdata = grid_seq),
+    Temp = predict(model_temp_loess, newdata = grid_seq)
+  )
+ggplot() +
+  geom_point(data = aqdata, aes(x = unified_date, y = Ozone, color = Temp), 
+             size = 1, alpha = 1.0) +
+  geom_point(data = predicted_data_loess, aes(x = unified_date, y = Ozone, color = Temp), 
+            , alpha = 1.0, size = 1) + 
+  scale_color_gradientn(colours = c("darkblue", "blue", "red", "yellow", "lightyellow")) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%B", expand = c(0.05, 0)) + 
+  labs(
+    title = "New York Air Quality, 1973, May - October",
+    y = "Ozone", 
+    x = "Date"
+  ) +
+  theme_minimal()
+```
+
+The produced graph shows the relationship between ozone levels, time of year, and temperature(above 85, below 75, and between 85 and 75). There were two main challenges:
+
+- The month and date values were separated, so unification was needed before graphing.
+
+  - Solved by using the mutate function from the dplyr library with functions from the lubridate library to map the raw month and day numbers to the R Date class, then using the scale_x_date function provided by ggplot2.
+
+- Applying a smooth gradient to a line normally was not possible, so I had to find another method
+
+  - Solved by first getting the line represented as a set of points in a new variable in the data frame, then applying the gradient to the points.
+
+# CGM Vs HbA1c
+
+- CGM, or continuous glucose monitoring, is a technology that uses a small sensor to continually monitor glucose, providing real time information about glucose levels. Using it is often exponsive, as the sensors have to be disposable.
+
+- HbA1c is a technology that gets a average glucose level for the pase 2-3 months. It is often cheaper, but it cannot provide as detailed information as CGM. For example, it cannot show how volatile the glucose levels of a patient are.
+
+# Notes on Multimodal AI correlates of glucose spikes in people with normal glucose regulation, pre-diabetes and type 2 diabetes
+
+## Research Questions
+
+- The main research question of this paper is how continuous glucose monitoring(CGM) derived glucose spike data correlate with multimodal physiological and lifestyle factors across varying states of glucose regulation (normoglycemic, pre-diabetes, and type 2 diabetes).
+
+- The study also investigates whether a multimodal artificial intelligence (AI) model utilizing these integrated features can improve risk stratification and predict progression to type 2 diabetes (T2D) more accurately than traditional, static clinical diagnostics such as glycated hemoglobin (HbA1c).
+
+## Data Sources
+
+- PROGRESS Trial Cohort: Fully remote clinical trial of 1000 people from across the US. Participants were normoglycymic, had pre-diabetes, or had type 2 diabetes.
+
+- HPP External Validation Cohort: A independent dataset of \~2000 used to validate the generalizability of the AI model.
+
+- Biometric & Physiological Data: Wearable sensor outputs including resting heart rate and physical activity tracking.
+
+- Biological & Multi-omic Data: Gut microbiome profiles extracted from stool samples, alongside biological markers from saliva and blood tests (including Polygenic Risk Scores \[PRS\] and HbA1c).
+
+- Anthropometric & Lifestyle Data: Body Mass Index (BMI), self-reported dietary logging (specifically tracking daily carbohydrate intake), and demographic parameters.
+
+## Analytical Methods
+
+- The team quantified specific glucose spike metrics from the temporal CGM profiles, focusing on the expected time for spike resolution, mean glucose levels, nocturnal hypoglycemia, and the percentage of time spent in hyperglycemia.
+
+- Spearman's rank correlation coefficients were computed to assess the relationships between the extracted glucose spike metrics and the multimodal factors. These analyses were stringently controlled for potential confounding variables, including age, sex, and Polygenic Risk Score (PRS).
+
+- A multimodal binary classification model was developed and trained on the PROGRESS dataset to differentiate between normoglycemic individuals and those with T2D.
+
+- The performance of the AI classifier was tested against the external, independent HPP cohort. Feature importance analyses were subsequently conducted to delineate the most predictive variables signaling early dysglycemia.
+
+## Key Findings
+
+- A statistically significant negative correlation was identified between gut microbiome diversity and mean glucose levels (r = −0.301), as well as time spent in hyperglycemia. This indicates that higher microbial diversity is robustly associated with healthier post-prandial glycemic responses.
+
+- Resting heart rate and BMI demonstrated a positive correlation with prolonged expected time for spike resolution. Conversely, higher physical activity levels consistently correlated with favorable glucose spike resolution metrics.
+
+- Increased daily carbohydrate intake exhibited a complex effect on glycemic homeostasis. While it provoked more frequent and intense glycemic spikes, it surprisingly correlated with a faster expected time for spike resolution, suggesting a rapid absorption mechanism.
+
+- The multimodal AI classification model achieved an Area Under the Curve (AUC) of 0.96 within the training cohort and maintained robust predictive capability with an AUC of 0.90 in the independent HPP validation cohort.
+
+- The algorithm successfully stratified cardiometabolic risk among individuals who presented with the exact same HbA1c levels. This finding exposes the severe limitations of standard static glucose thresholds in capturing dynamic perturbations in glucose homeostasis, proving that AI-driven multimodal profiling can identify pre-diabetic risk long before traditional biomarkers signal clinical pathology.
+
+## Limitations
+
+- The reliance on self-logged dietary intake introduces intrinsic inaccuracies regarding meal composition and precise carbohydrate load tracking.
+
+- Potential measurement noise and calibration drift inherent in wearable sensors and CGM.
+
+- The presence of varying antihyperglycemic medication regimens among T2D participants may distort baseline physiological responses, complicating the isolation of natural pathophysiological progression.
+
+- While the cross-sectional evaluation accurately categorizes risk profiles, true clinical validation of the AI model's predictive precision requires multi-year longitudinal studies to observe the actual rate of progression from pre-diabetes to pathological T2D.
+
+# AI-READI
+
+## What it Can and Cannot Prove
+
+- It can establish multi-modal correlations linking clinical, environmental, and physiological variables in Type 2 Diabetes Mellitus.
+
+- By capturing data across diverse cohorts with varying disease severity, machine learning models can map theoretical cross-sectional disease staging and pseudotime manifolds representing disease progression or salutogenesis.
+
+- Balanced data splits also provide a standardized benchmark to prove the efficacy, fairness, and equitable performance of novel algorithmic architectures across different demographic groups.
+
+- The dataset cannot prove definitive causality between associated health and environmental variables without targeted, randomized interventions.
+
+- Because the current data structure consists of single-visit participant records, it cannot demonstrate true single subject progression over real time.
+
+## Data Included
+
+- Biological Sex
+- Race / Ethnicity
+- Diabetes Status
+- Date of Birth
+- Age
+- Marital Status
+- Gender Identity
+- Health Survey
+- Substance Use Survey
+- CESD-10 Depression Survey
+- PAID-5 Problem Areas in Diabetes Survey
+- Diabetes Self-Care (lifestyle) Survey
+- Dietary Survey
+- Social Determinants of Health Survey (combined PhenX Toolkit)
+- Food Insecurity Survey (PhenX Toolkit)
+- Neighborhood Environment Survey (PhenX Toolkit)
+- Racial/Ethnic Discrimination Survey (PhenX Toolkit)
+- Visual Impairment and Access to Eye Care
+- Last Meal (hours)
+- Height
+- Weight
+- BMI
+- Waist Circumferene
+- Hip Circumference
+- Waist to Hip Ratio
+- Blood Pressure (resting)
+- Heart rate
+- Autorefraction
+- BCVA photopic and mesopic
+- Mars Letter contrast sensitivity photopic
+- Mars Letter contrast sensitivity mesopic
+- Montreal Cognitive Assessment (MoCA)
+- Fundus photo
+- OCT
+- OCTA
+- FLIO
+- ECG
+- Monofilament test
+- NT-proBNP
+- Troponin-T
+- C-Peptide
+- Insulin
+- CRP-HS
+- Total Cholesterol
+- Triglycerides
+- HDL Cholesterol
+- LDL Cholesterol (calculated field)
+- Glucose
+- BUN
+- Creatinine
+- BUN/Creatinine ratio
+- Sodium
+- Potassium
+- Chloride
+- Carbon Dioxide, Total
+- Calcium
+- Protein, total
+- Albumin
+- Globulin, total (calculated field)
+- A/G Ratio (calculated field)
+- Bilirubin, Total
+- Alkaline Phosphatase
+- AST (GOT)
+- ALT (GPT)
+- HbA1c
+- Urine creatinine
+- Urine Albumin
+- CBC (with platelets, no differential)
+- Heart Rate (bpm)
+- Sleep data (hrs)
+- Oxygen saturation (pulse ox)
+- Humidity
+- Light levels
+- Particulate matter 1, 2.5, 4, and 10
+- VOCs
+- Temperature
+- NOx
+- blood glucose levels
+
+# Epidemiology Questions
+
+## Perspective v.s. Retrospective Studies
+
+- In perspective studies, data is collected as time goes on, and researchers have to follow participants forward in time.
+
+- In retrospective studies, the data has already been collected, and researchers analyze historic data.
+
+## Case-Control v.s. Longitudinal/Cohort Studies
+
+- A longitudinal / cohort study is one where the researchers find a group of people defined by a specific factor and track them to find out who develops the outcome.
+
+- A case-control study happens when researchers find two groups of people, one with the outcome, and one without. Then then look backwards to asses prior exposure status. 
