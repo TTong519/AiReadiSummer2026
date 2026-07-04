@@ -33,15 +33,26 @@ I decided to graph the built in airquality data set to practice R. The final cod
 library(ggplot2)
 library(dplyr)
 library(lubridate)
+
+#Data Wrangling
+
+# Unify Dates
+
 aqdata <- airquality %>%
   mutate(
     unified_date = make_date(year = 1973, month = Month, day = Day),
     num_date = as.numeric(unified_date)
   ) %>%
+  
+# Create Grid
+
   filter(!is.na(Ozone) & !is.na(Temp) & !is.na(unified_date))
 grid_seq <- data.frame(
   unified_date = seq(min(aqdata$unified_date), max(aqdata$unified_date), length.out = 100000)
 ) %>%
+  
+# Map LOESS To Grid
+
   mutate(num_date = as.numeric(unified_date))
 model_ozone_loess <- loess(Ozone ~ num_date, data = aqdata, span = 0.75)
 model_temp_loess  <- loess(Temp ~ num_date, data = aqdata, span = 0.75)
@@ -50,6 +61,9 @@ predicted_data_loess <- grid_seq %>%
     Ozone = predict(model_ozone_loess, newdata = grid_seq),
     Temp = predict(model_temp_loess, newdata = grid_seq)
   )
+
+# Rendering
+
 ggplot() +
   geom_point(data = aqdata, aes(x = unified_date, y = Ozone, color = Temp), 
              size = 1, alpha = 1.0) +
@@ -65,21 +79,22 @@ ggplot() +
   theme_minimal()
 ```
 
-The produced graph shows the relationship between ozone levels, time of year, and temperature(above 85, below 75, and between 85 and 75). There were two main challenges:
+The produced graph shows the relationship between ozone levels, time of year, and temperature. As we can see, the ozone levels are correlated to time of year as well as the temperature. The temperature was also related to the time of year, demonstrating that the nata is insufficient to determine a general cause/effect relationship. 
+There were two main challenges:
 
 - The month and date values were separated, so unification was needed before graphing.
 
   - Solved by using the mutate function from the dplyr library with functions from the lubridate library to map the raw month and day numbers to the R Date class, then using the scale_x_date function provided by ggplot2.
 
-- Applying a smooth gradient to a line normally was not possible, so I had to find another method
+- Applying a smooth gradient to a line normally was not possible, so I had to find another method.
 
   - Solved by first getting the line represented as a set of points in a new variable in the data frame, then applying the gradient to the points.
 
 # CGM Vs HbA1c
 
-- CGM, or continuous glucose monitoring, is a technology that uses a small sensor to continually monitor glucose, providing real time information about glucose levels. Using it is often exponsive, as the sensors have to be disposable.
+- CGM, or continuous glucose monitoring, is a technology that uses a small sensor to continually monitor glucose, providing real time information about glucose levels. Using it is often expensive, as the sensors have to be disposable.
 
-- HbA1c is a technology that gets a average glucose level for the pase 2-3 months. It is often cheaper, but it cannot provide as detailed information as CGM. For example, it cannot show how volatile the glucose levels of a patient are.
+- HbA1c is a technology that gets a average glucose level for the past 2-3 months. It is often cheaper, but it cannot provide as detailed information as CGM. For example, it cannot show how volatile the glucose levels of a patient are.
 
 # Notes on Multimodal AI correlates of glucose spikes in people with normal glucose regulation, pre-diabetes and type 2 diabetes
 
@@ -230,9 +245,9 @@ The produced graph shows the relationship between ozone levels, time of year, an
 
 # Epidemiology Questions
 
-## Perspective v.s. Retrospective Studies
+## Prospective v.s. Retrospective Studies
 
-- In perspective studies, data is collected as time goes on, and researchers have to follow participants forward in time.
+- In prospective studies, data is collected as time goes on, and researchers have to follow participants forward in time.
 
 - In retrospective studies, the data has already been collected, and researchers analyze historic data.
 

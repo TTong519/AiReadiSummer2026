@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Tyler Tong">
-<meta name="dcterms.date" content="2026-06-25">
+<meta name="dcterms.date" content="2026-07-03">
 
 <title>Background Report</title>
 <style>
@@ -2228,7 +2228,7 @@ vertical-align: -.125em;
   </ul></li>
   <li><a href="#epidemiology-questions" id="toc-epidemiology-questions" class="nav-link" data-scroll-target="#epidemiology-questions"><span class="header-section-number">7</span> Epidemiology Questions</a>
   <ul>
-  <li><a href="#perspective-v.s.-retrospective-studies" id="toc-perspective-v.s.-retrospective-studies" class="nav-link" data-scroll-target="#perspective-v.s.-retrospective-studies"><span class="header-section-number">7.1</span> Perspective v.s. Retrospective Studies</a></li>
+  <li><a href="#prospective-v.s.-retrospective-studies" id="toc-prospective-v.s.-retrospective-studies" class="nav-link" data-scroll-target="#prospective-v.s.-retrospective-studies"><span class="header-section-number">7.1</span> Prospective v.s. Retrospective Studies</a></li>
   <li><a href="#case-control-v.s.-longitudinalcohort-studies" id="toc-case-control-v.s.-longitudinalcohort-studies" class="nav-link" data-scroll-target="#case-control-v.s.-longitudinalcohort-studies"><span class="header-section-number">7.2</span> Case-Control v.s. Longitudinal/Cohort Studies</a></li>
   </ul></li>
   </ul>
@@ -2257,7 +2257,7 @@ vertical-align: -.125em;
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">June 25, 2026</p>
+      <p class="date">July 3, 2026</p>
     </div>
   </div>
   
@@ -2284,36 +2284,50 @@ vertical-align: -.125em;
 <div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(ggplot2)</span>
 <span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dplyr)</span>
 <span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(lubridate)</span>
-<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>aqdata <span class="ot">&lt;-</span> airquality <span class="sc">%&gt;%</span></span>
-<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
-<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a>    <span class="at">unified_date =</span> <span class="fu">make_date</span>(<span class="at">year =</span> <span class="dv">1973</span>, <span class="at">month =</span> Month, <span class="at">day =</span> Day),</span>
-<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a>    <span class="at">num_date =</span> <span class="fu">as.numeric</span>(unified_date)</span>
-<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
-<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(Ozone) <span class="sc">&amp;</span> <span class="sc">!</span><span class="fu">is.na</span>(Temp) <span class="sc">&amp;</span> <span class="sc">!</span><span class="fu">is.na</span>(unified_date))</span>
-<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>grid_seq <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
-<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>  <span class="at">unified_date =</span> <span class="fu">seq</span>(<span class="fu">min</span>(aqdata<span class="sc">$</span>unified_date), <span class="fu">max</span>(aqdata<span class="sc">$</span>unified_date), <span class="at">length.out =</span> <span class="dv">100000</span>)</span>
-<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>) <span class="sc">%&gt;%</span></span>
-<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">num_date =</span> <span class="fu">as.numeric</span>(unified_date))</span>
-<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>model_ozone_loess <span class="ot">&lt;-</span> <span class="fu">loess</span>(Ozone <span class="sc">~</span> num_date, <span class="at">data =</span> aqdata, <span class="at">span =</span> <span class="fl">0.75</span>)</span>
-<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a>model_temp_loess  <span class="ot">&lt;-</span> <span class="fu">loess</span>(Temp <span class="sc">~</span> num_date, <span class="at">data =</span> aqdata, <span class="at">span =</span> <span class="fl">0.75</span>)</span>
-<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a>predicted_data_loess <span class="ot">&lt;-</span> grid_seq <span class="sc">%&gt;%</span></span>
-<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
-<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>    <span class="at">Ozone =</span> <span class="fu">predict</span>(model_ozone_loess, <span class="at">newdata =</span> grid_seq),</span>
-<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>    <span class="at">Temp =</span> <span class="fu">predict</span>(model_temp_loess, <span class="at">newdata =</span> grid_seq)</span>
-<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>() <span class="sc">+</span></span>
-<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">data =</span> aqdata, <span class="fu">aes</span>(<span class="at">x =</span> unified_date, <span class="at">y =</span> Ozone, <span class="at">color =</span> Temp), </span>
-<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a>             <span class="at">size =</span> <span class="dv">1</span>, <span class="at">alpha =</span> <span class="fl">1.0</span>) <span class="sc">+</span></span>
-<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">data =</span> predicted_data_loess, <span class="fu">aes</span>(<span class="at">x =</span> unified_date, <span class="at">y =</span> Ozone, <span class="at">color =</span> Temp), </span>
-<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>            , <span class="at">alpha =</span> <span class="fl">1.0</span>, <span class="at">size =</span> <span class="dv">1</span>) <span class="sc">+</span> </span>
-<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_gradientn</span>(<span class="at">colours =</span> <span class="fu">c</span>(<span class="st">&quot;darkblue&quot;</span>, <span class="st">&quot;blue&quot;</span>, <span class="st">&quot;red&quot;</span>, <span class="st">&quot;yellow&quot;</span>, <span class="st">&quot;lightyellow&quot;</span>)) <span class="sc">+</span></span>
-<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_date</span>(<span class="at">date_breaks =</span> <span class="st">&quot;1 month&quot;</span>, <span class="at">date_labels =</span> <span class="st">&quot;%B&quot;</span>, <span class="at">expand =</span> <span class="fu">c</span>(<span class="fl">0.05</span>, <span class="dv">0</span>)) <span class="sc">+</span> </span>
-<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
-<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>    <span class="at">title =</span> <span class="st">&quot;New York Air Quality, 1973, May - October&quot;</span>,</span>
-<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">&quot;Ozone&quot;</span>, </span>
-<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="st">&quot;Date&quot;</span></span>
-<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
-<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a><span class="co">#Data Wrangling</span></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Unify Dates</span></span>
+<span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-9"><a href="#cb1-9" aria-hidden="true" tabindex="-1"></a>aqdata <span class="ot">&lt;-</span> airquality <span class="sc">%&gt;%</span></span>
+<span id="cb1-10"><a href="#cb1-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb1-11"><a href="#cb1-11" aria-hidden="true" tabindex="-1"></a>    <span class="at">unified_date =</span> <span class="fu">make_date</span>(<span class="at">year =</span> <span class="dv">1973</span>, <span class="at">month =</span> Month, <span class="at">day =</span> Day),</span>
+<span id="cb1-12"><a href="#cb1-12" aria-hidden="true" tabindex="-1"></a>    <span class="at">num_date =</span> <span class="fu">as.numeric</span>(unified_date)</span>
+<span id="cb1-13"><a href="#cb1-13" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">%&gt;%</span></span>
+<span id="cb1-14"><a href="#cb1-14" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb1-15"><a href="#cb1-15" aria-hidden="true" tabindex="-1"></a><span class="co"># Create Grid</span></span>
+<span id="cb1-16"><a href="#cb1-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-17"><a href="#cb1-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(<span class="sc">!</span><span class="fu">is.na</span>(Ozone) <span class="sc">&amp;</span> <span class="sc">!</span><span class="fu">is.na</span>(Temp) <span class="sc">&amp;</span> <span class="sc">!</span><span class="fu">is.na</span>(unified_date))</span>
+<span id="cb1-18"><a href="#cb1-18" aria-hidden="true" tabindex="-1"></a>grid_seq <span class="ot">&lt;-</span> <span class="fu">data.frame</span>(</span>
+<span id="cb1-19"><a href="#cb1-19" aria-hidden="true" tabindex="-1"></a>  <span class="at">unified_date =</span> <span class="fu">seq</span>(<span class="fu">min</span>(aqdata<span class="sc">$</span>unified_date), <span class="fu">max</span>(aqdata<span class="sc">$</span>unified_date), <span class="at">length.out =</span> <span class="dv">100000</span>)</span>
+<span id="cb1-20"><a href="#cb1-20" aria-hidden="true" tabindex="-1"></a>) <span class="sc">%&gt;%</span></span>
+<span id="cb1-21"><a href="#cb1-21" aria-hidden="true" tabindex="-1"></a>  </span>
+<span id="cb1-22"><a href="#cb1-22" aria-hidden="true" tabindex="-1"></a><span class="co"># Map LOESS To Grid</span></span>
+<span id="cb1-23"><a href="#cb1-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-24"><a href="#cb1-24" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(<span class="at">num_date =</span> <span class="fu">as.numeric</span>(unified_date))</span>
+<span id="cb1-25"><a href="#cb1-25" aria-hidden="true" tabindex="-1"></a>model_ozone_loess <span class="ot">&lt;-</span> <span class="fu">loess</span>(Ozone <span class="sc">~</span> num_date, <span class="at">data =</span> aqdata, <span class="at">span =</span> <span class="fl">0.75</span>)</span>
+<span id="cb1-26"><a href="#cb1-26" aria-hidden="true" tabindex="-1"></a>model_temp_loess  <span class="ot">&lt;-</span> <span class="fu">loess</span>(Temp <span class="sc">~</span> num_date, <span class="at">data =</span> aqdata, <span class="at">span =</span> <span class="fl">0.75</span>)</span>
+<span id="cb1-27"><a href="#cb1-27" aria-hidden="true" tabindex="-1"></a>predicted_data_loess <span class="ot">&lt;-</span> grid_seq <span class="sc">%&gt;%</span></span>
+<span id="cb1-28"><a href="#cb1-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">mutate</span>(</span>
+<span id="cb1-29"><a href="#cb1-29" aria-hidden="true" tabindex="-1"></a>    <span class="at">Ozone =</span> <span class="fu">predict</span>(model_ozone_loess, <span class="at">newdata =</span> grid_seq),</span>
+<span id="cb1-30"><a href="#cb1-30" aria-hidden="true" tabindex="-1"></a>    <span class="at">Temp =</span> <span class="fu">predict</span>(model_temp_loess, <span class="at">newdata =</span> grid_seq)</span>
+<span id="cb1-31"><a href="#cb1-31" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb1-32"><a href="#cb1-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-33"><a href="#cb1-33" aria-hidden="true" tabindex="-1"></a><span class="co"># Rendering</span></span>
+<span id="cb1-34"><a href="#cb1-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-35"><a href="#cb1-35" aria-hidden="true" tabindex="-1"></a><span class="fu">ggplot</span>() <span class="sc">+</span></span>
+<span id="cb1-36"><a href="#cb1-36" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">data =</span> aqdata, <span class="fu">aes</span>(<span class="at">x =</span> unified_date, <span class="at">y =</span> Ozone, <span class="at">color =</span> Temp), </span>
+<span id="cb1-37"><a href="#cb1-37" aria-hidden="true" tabindex="-1"></a>             <span class="at">size =</span> <span class="dv">1</span>, <span class="at">alpha =</span> <span class="fl">1.0</span>) <span class="sc">+</span></span>
+<span id="cb1-38"><a href="#cb1-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">geom_point</span>(<span class="at">data =</span> predicted_data_loess, <span class="fu">aes</span>(<span class="at">x =</span> unified_date, <span class="at">y =</span> Ozone, <span class="at">color =</span> Temp), </span>
+<span id="cb1-39"><a href="#cb1-39" aria-hidden="true" tabindex="-1"></a>            , <span class="at">alpha =</span> <span class="fl">1.0</span>, <span class="at">size =</span> <span class="dv">1</span>) <span class="sc">+</span> </span>
+<span id="cb1-40"><a href="#cb1-40" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_color_gradientn</span>(<span class="at">colours =</span> <span class="fu">c</span>(<span class="st">&quot;darkblue&quot;</span>, <span class="st">&quot;blue&quot;</span>, <span class="st">&quot;red&quot;</span>, <span class="st">&quot;yellow&quot;</span>, <span class="st">&quot;lightyellow&quot;</span>)) <span class="sc">+</span></span>
+<span id="cb1-41"><a href="#cb1-41" aria-hidden="true" tabindex="-1"></a>  <span class="fu">scale_x_date</span>(<span class="at">date_breaks =</span> <span class="st">&quot;1 month&quot;</span>, <span class="at">date_labels =</span> <span class="st">&quot;%B&quot;</span>, <span class="at">expand =</span> <span class="fu">c</span>(<span class="fl">0.05</span>, <span class="dv">0</span>)) <span class="sc">+</span> </span>
+<span id="cb1-42"><a href="#cb1-42" aria-hidden="true" tabindex="-1"></a>  <span class="fu">labs</span>(</span>
+<span id="cb1-43"><a href="#cb1-43" aria-hidden="true" tabindex="-1"></a>    <span class="at">title =</span> <span class="st">&quot;New York Air Quality, 1973, May - October&quot;</span>,</span>
+<span id="cb1-44"><a href="#cb1-44" aria-hidden="true" tabindex="-1"></a>    <span class="at">y =</span> <span class="st">&quot;Ozone&quot;</span>, </span>
+<span id="cb1-45"><a href="#cb1-45" aria-hidden="true" tabindex="-1"></a>    <span class="at">x =</span> <span class="st">&quot;Date&quot;</span></span>
+<span id="cb1-46"><a href="#cb1-46" aria-hidden="true" tabindex="-1"></a>  ) <span class="sc">+</span></span>
+<span id="cb1-47"><a href="#cb1-47" aria-hidden="true" tabindex="-1"></a>  <span class="fu">theme_minimal</span>()</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output-display">
 <div>
 <figure class="figure">
@@ -2322,13 +2336,13 @@ vertical-align: -.125em;
 </div>
 </div>
 </div>
-<p>The produced graph shows the relationship between ozone levels, time of year, and temperature(above 85, below 75, and between 85 and 75). There were two main challenges:</p>
+<p>The produced graph shows the relationship between ozone levels, time of year, and temperature. As we can see, the ozone levels are correlated to time of year as well as the temperature. The temperature was also related to the time of year, demonstrating that the nata is insufficient to determine a general cause/effect relationship. There were two main challenges:</p>
 <ul>
 <li><p>The month and date values were separated, so unification was needed before graphing.</p>
 <ul>
 <li>Solved by using the mutate function from the dplyr library with functions from the lubridate library to map the raw month and day numbers to the R Date class, then using the scale_x_date function provided by ggplot2.</li>
 </ul></li>
-<li><p>Applying a smooth gradient to a line normally was not possible, so I had to find another method</p>
+<li><p>Applying a smooth gradient to a line normally was not possible, so I had to find another method.</p>
 <ul>
 <li>Solved by first getting the line represented as a set of points in a new variable in the data frame, then applying the gradient to the points.</li>
 </ul></li>
@@ -2337,8 +2351,8 @@ vertical-align: -.125em;
 <section id="cgm-vs-hba1c" class="level1" data-number="4">
 <h1 data-number="4"><span class="header-section-number">4</span> CGM Vs HbA1c</h1>
 <ul>
-<li><p>CGM, or continuous glucose monitoring, is a technology that uses a small sensor to continually monitor glucose, providing real time information about glucose levels. Using it is often exponsive, as the sensors have to be disposable.</p></li>
-<li><p>HbA1c is a technology that gets a average glucose level for the pase 2-3 months. It is often cheaper, but it cannot provide as detailed information as CGM. For example, it cannot show how volatile the glucose levels of a patient are.</p></li>
+<li><p>CGM, or continuous glucose monitoring, is a technology that uses a small sensor to continually monitor glucose, providing real time information about glucose levels. Using it is often expensive, as the sensors have to be disposable.</p></li>
+<li><p>HbA1c is a technology that gets a average glucose level for the past 2-3 months. It is often cheaper, but it cannot provide as detailed information as CGM. For example, it cannot show how volatile the glucose levels of a patient are.</p></li>
 </ul>
 </section>
 <section id="notes-on-multimodal-ai-correlates-of-glucose-spikes-in-people-with-normal-glucose-regulation-pre-diabetes-and-type-2-diabetes" class="level1" data-number="5">
@@ -2487,10 +2501,10 @@ vertical-align: -.125em;
 </section>
 <section id="epidemiology-questions" class="level1" data-number="7">
 <h1 data-number="7"><span class="header-section-number">7</span> Epidemiology Questions</h1>
-<section id="perspective-v.s.-retrospective-studies" class="level2" data-number="7.1">
-<h2 data-number="7.1" class="anchored" data-anchor-id="perspective-v.s.-retrospective-studies"><span class="header-section-number">7.1</span> Perspective v.s. Retrospective Studies</h2>
+<section id="prospective-v.s.-retrospective-studies" class="level2" data-number="7.1">
+<h2 data-number="7.1" class="anchored" data-anchor-id="prospective-v.s.-retrospective-studies"><span class="header-section-number">7.1</span> Prospective v.s. Retrospective Studies</h2>
 <ul>
-<li><p>In perspective studies, data is collected as time goes on, and researchers have to follow participants forward in time.</p></li>
+<li><p>In prospective studies, data is collected as time goes on, and researchers have to follow participants forward in time.</p></li>
 <li><p>In retrospective studies, the data has already been collected, and researchers analyze historic data.</p></li>
 </ul>
 </section>
