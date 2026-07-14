@@ -1,0 +1,132 @@
+---
+title: "Cohort Assembly"
+author: "Tyler Tong"
+date: today
+format:
+  html:
+    theme: cosmo
+    embed-resources: true
+    number-sections: true
+    toc: true
+    toc-depth: 4
+    toc-location: left
+    code-fold: false
+engine: knitr
+---
+
+# Cohort Table
+```{R}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(readr)
+# get data
+data <- read_tsv("~/AiReadi/AiReadiSummer2026/Data/participants.tsv")
+cgmdata <- read_tsv("~/AiReadi/AiReadiSummer2026/Data/cgm.tsv")
+wearabledata <- read_tsv("~/AiReadi/AiReadiSummer2026/Data/wearable.tsv")
+# remove unneeded variables
+cgmdata <- cgmdata |> select(person_id, average_glucose_level_mg_dl)
+wearabledata <- wearabledata |> select(person_id, average_daily_activity)
+# join data by person_id
+data <- data |> left_join(cgmdata, by = join_by(person_id))
+data <- data |> left_join(wearabledata, by = join_by(person_id))
+# print
+glimpse(data)
+```
+# Mini Dataset Analysis
+```{R}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(readr)
+data <- read_tsv("~/AiReadi/AiReadiSummer2026/Data/participants.tsv")
+ggplot(data, aes(y = study_group)) + geom_bar()
+```
+```{R}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(readr)
+data <- read_tsv("~/AiReadi/AiReadiSummer2026/Data/participants.tsv")
+data <- data |> count(clinical_site, study_group)
+ggplot(data, aes(x = clinical_site, y = study_group, fill = n)) + geom_tile()
+```
+```{R}
+#| message: false
+#| warning: false
+library(tidyverse)
+library(readr)
+library(purrr)
+
+data <- read_tsv("~/AiReadi/AiReadiSummer2026/Data/participants.tsv")
+
+countcgm <- data |> count(wearable_blood_glucose)
+countwearable <- data |> count(wearable_activity_monitor)
+countclinical <- data |> count(clinical_data)
+countcgmwearable <- data |> count(wearable_blood_glucose, wearable_activity_monitor)
+countall <- data |> count(wearable_blood_glucose, wearable_activity_monitor, clinical_data)
+
+counts <- transmute(countcgm, cgm = map_dbl(n, 1))
+counts <- counts |> cross_join(transmute(countwearable, wearable = map_dbl(n, 1)))
+counts <- counts |> cross_join(transmute(countclinical, clinical = map_dbl(n, 1)))
+counts <- counts |> cross_join(transmute(countcgmwearable, cgmwearable = map_dbl(n, 1)))
+counts <- counts |> cross_join(transmute(countcgmwearable, cgmwearableclinical = map_dbl(n, 1)))
+
+glimpse(counts)
+```
+```{R}
+#| message: false
+#| warning: false
+library(readr)
+library(tidyverse)
+
+df <- read_tsv("~/AiReadi/AiReadiSummer2026/Data/participants.tsv", show_col_types = FALSE)
+
+modality_counts <- df %>%
+  select(
+    cardiac_ecg, 
+    clinical_data, 
+    environment, 
+    retinal_flio,
+    retinal_oct, 
+    retinal_octa, 
+    retinal_photography,
+    wearable_activity_monitor, 
+    wearable_blood_glucose
+  ) |>
+  mutate(across(everything(), as.logical)) |>
+  pivot_longer(
+    cols = everything(), 
+    names_to = "Modality", 
+    values_to = "Is_Available"
+  ) |>
+  filter(Is_Available == TRUE) |>
+  count(Modality, name = "Frequency") %>%
+  mutate(Modality = fct_reorder(Modality, Frequency))
+
+ggplot(modality_counts, aes(x = Frequency, y = Modality, fill = Modality)) +
+  geom_col(show.legend = FALSE, alpha = 0.85) +
+  geom_text(aes(label = Frequency), hjust = -0.2, size = 4) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.15)))
+```
+# Mini vs Full
+- Mini only has 100 participants, while the full dataset has 2k+.
+- Both the full and mini have the same study groups and clinical sites.
+- The full data set has some gaps in availability, but the mini has full coverage.
+- any code written for the mini data set should run the same on the full data set.
+# Analysis Cohorts
+
+## CGM Cohort
+
+- All participants with CGM data are in this cohort.
+- Contains 2245 participants.
+- Represents all study groups.
+- Can be used to study how glucose changes in different people who have different conditions, as well as how glucose affects clinical data.
+- 80 of the participants in this cohort do not have wearable data, so it can't be used to study how lifestyle affects glucose.
+
+## CGM + Wearable Cohort
+
+- Participants who have CGM and wearable data are in this cohort.
+- Contains 2145 participants.
+- Can be used to study how glucose responds to lifestyle changes, as well as how that may affect clinical data.
+- Cannot be used as a representative sample of the real population, as it has selection bias towards those who provided wearable data.
