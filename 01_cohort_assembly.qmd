@@ -13,43 +13,56 @@ format:
     code-fold: false
 engine: knitr
 ---
-
+```{R}
+#| message: false
+#| warning: false
+#| include: false
+library(tidyverse)
+library(readr)
+library(gt)
+participants <- read_tsv("Data/mini/participants.tsv")
+cgm <- read_tsv("Data/mini/cgm.tsv")
+activity <- read_tsv("Data/mini/activity.tsv")
+fullparticipants <- read_tsv("Data/full/participants.tsv")
+```
 # Cohort Table
 ```{R}
 #| message: false
 #| warning: false
-library(tidyverse)
-library(readr)
-# get data
-data <- read_tsv("~/AiReadi/AiReadiSummer2026/Data/participants.tsv")
-cgmdata <- read_tsv("~/AiReadi/AiReadiSummer2026/Data/cgm.tsv")
-wearabledata <- read_tsv("~/AiReadi/AiReadiSummer2026/Data/wearable.tsv")
-# remove unneeded variables
-cgmdata <- cgmdata |> select(person_id, average_glucose_level_mg_dl)
-wearabledata <- wearabledata |> select(person_id, average_daily_activity)
+# clean data
+cgmdata <- cgm |> select(person_id, average_glucose_level_mg_dl)
+wearabledata <- activity |> select(person_id, average_daily_activity)
+```
+
+```{R}
+#| message: false
+#| warning: false
 # join data by person_id
-data <- data |> left_join(cgmdata, by = join_by(person_id))
+data <- participants |> left_join(cgmdata, by = join_by(person_id))
 data <- data |> left_join(wearabledata, by = join_by(person_id))
-# print
-glimpse(data)
+```
+
+```{R}
+#| message: false
+#| warning: false
+# display
+gt(data)
 ```
 # Mini Dataset Analysis
 ```{R}
 #| message: false
 #| warning: false
-library(tidyverse)
-library(readr)
-data <- read_tsv("~/AiReadi/AiReadiSummer2026/Data/participants.tsv")
-ggplot(data, aes(y = study_group)) + geom_bar()
+data <- participants |> count(study_group)
+gt(data)
 ```
 ```{R}
 #| message: false
 #| warning: false
 library(tidyverse)
 library(readr)
-data <- read_tsv("~/AiReadi/AiReadiSummer2026/Data/participants.tsv")
-data <- data |> count(clinical_site, study_group)
-ggplot(data, aes(x = clinical_site, y = study_group, fill = n)) + geom_tile()
+library(gt)
+data <- participants |> count(clinical_site, study_group)
+gt(data, groupname_col = "clinical_site", row_group_as_column = TRUE)
 ```
 ```{R}
 #| message: false
@@ -57,14 +70,13 @@ ggplot(data, aes(x = clinical_site, y = study_group, fill = n)) + geom_tile()
 library(tidyverse)
 library(readr)
 library(purrr)
+library(gt)
 
-data <- read_tsv("~/AiReadi/AiReadiSummer2026/Data/participants.tsv")
-
-countcgm <- data |> count(wearable_blood_glucose)
-countwearable <- data |> count(wearable_activity_monitor)
-countclinical <- data |> count(clinical_data)
-countcgmwearable <- data |> count(wearable_blood_glucose, wearable_activity_monitor)
-countall <- data |> count(wearable_blood_glucose, wearable_activity_monitor, clinical_data)
+countcgm <- participants |> count(wearable_blood_glucose)
+countwearable <- participants |> count(wearable_activity_monitor)
+countclinical <- participants |> count(clinical_data)
+countcgmwearable <- participants |> count(wearable_blood_glucose, wearable_activity_monitor)
+countall <- participants |> count(wearable_blood_glucose, wearable_activity_monitor, clinical_data)
 
 counts <- transmute(countcgm, cgm = map_dbl(n, 1))
 counts <- counts |> cross_join(transmute(countwearable, wearable = map_dbl(n, 1)))
@@ -72,17 +84,13 @@ counts <- counts |> cross_join(transmute(countclinical, clinical = map_dbl(n, 1)
 counts <- counts |> cross_join(transmute(countcgmwearable, cgmwearable = map_dbl(n, 1)))
 counts <- counts |> cross_join(transmute(countcgmwearable, cgmwearableclinical = map_dbl(n, 1)))
 
-glimpse(counts)
+gt(counts)
 ```
 ```{R}
 #| message: false
 #| warning: false
-library(readr)
-library(tidyverse)
 
-df <- read_tsv("~/AiReadi/AiReadiSummer2026/Data/participants.tsv", show_col_types = FALSE)
-
-modality_counts <- df %>%
+modality_counts <- participants |>
   select(
     cardiac_ecg, 
     clinical_data, 
@@ -101,9 +109,12 @@ modality_counts <- df %>%
     values_to = "Is_Available"
   ) |>
   filter(Is_Available == TRUE) |>
-  count(Modality, name = "Frequency") %>%
+  count(Modality, name = "Frequency") |>
   mutate(Modality = fct_reorder(Modality, Frequency))
-
+```
+```{R}
+#| message: false
+#| warning: false
 ggplot(modality_counts, aes(x = Frequency, y = Modality, fill = Modality)) +
   geom_col(show.legend = FALSE, alpha = 0.85) +
   geom_text(aes(label = Frequency), hjust = -0.2, size = 4) +
@@ -114,19 +125,30 @@ ggplot(modality_counts, aes(x = Frequency, y = Modality, fill = Modality)) +
 - Both the full and mini have the same study groups and clinical sites.
 - The full data set has some gaps in availability, but the mini has full coverage.
 - any code written for the mini data set should run the same on the full data set.
+
 # Analysis Cohorts
 
 ## CGM Cohort
 
+```{R}
+cgmcohort <- fullparticipants |> filter(wearable_blood_glucose)
+summary(cgmcohort)
+```
+
 - All participants with CGM data are in this cohort.
 - Contains 2245 participants.
-- Represents all study groups.
+- Represents all 4 study groups.
 - Can be used to study how glucose changes in different people who have different conditions, as well as how glucose affects clinical data.
 - 80 of the participants in this cohort do not have wearable data, so it can't be used to study how lifestyle affects glucose.
 
 ## CGM + Wearable Cohort
 
+```{R}
+cgmwearablecohort <- fullparticipants |> filter(wearable_blood_glucose, wearable_activity_monitor)
+summary(cgmwearablecohort)
+```
+
 - Participants who have CGM and wearable data are in this cohort.
-- Contains 2145 participants.
+- Contains 2165 participants.
 - Can be used to study how glucose responds to lifestyle changes, as well as how that may affect clinical data.
-- Cannot be used as a representative sample of the real population, as it has selection bias towards those who provided wearable data.
+- Cannot be used as a representative sample of the real population, as it may have selection bias towards those who provided wearable data.
