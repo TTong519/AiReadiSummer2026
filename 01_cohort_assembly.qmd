@@ -301,7 +301,7 @@ ggplot(modality_counts, aes(x = Frequency, y = Modality, fill = Modality)) +
 
 ```{R}
 cgmcohort <- fullparticipants |> filter(wearable_blood_glucose)
-summary(cgmcohort)
+tbl_summary(cgmwearablecohort) |> add_n() |> add_stat_label()
 ```
 
 - All participants with CGM data are in this cohort.
@@ -314,7 +314,7 @@ summary(cgmcohort)
 
 ```{R}
 cgmwearablecohort <- fullparticipants |> filter(wearable_blood_glucose, wearable_activity_monitor)
-summary(cgmwearablecohort)
+tbl_summary(cgmwearablecohort) |> add_n() |> add_stat_label()
 ```
 
 - Participants who have CGM and wearable data are in this cohort.
