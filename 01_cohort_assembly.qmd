@@ -13,41 +13,217 @@ format:
     code-fold: false
 engine: knitr
 ---
+
+# Load packages 
 ```{R}
 #| message: false
 #| warning: false
-#| include: false
 library(tidyverse)
 library(readr)
 library(gt)
-participants <- read_tsv("Data/mini/participants.tsv")
-cgm <- read_tsv("Data/mini/cgm.tsv")
-activity <- read_tsv("Data/mini/activity.tsv")
-fullparticipants <- read_tsv("Data/full/participants.tsv")
+library(purrr)
+library(janitor)
 ```
+
+# Load datasets
+```{r}
+#| message: false
+#| warning: false
+DATA_PATH = "/Users/tt/AiReadi/AiReadiSummer2026"
+mini_path <- paste0(
+  DATA_PATH,
+  "/Data/mini"
+)
+full_path <- paste0(
+  DATA_PATH,
+  "/Data/full"
+)
+```
+
+```{r}
+#| message: false
+#| warning: false
+participants <- read_tsv(
+  file.path(mini_path, "participants.tsv"),
+  show_col_types = FALSE)
+cgm_manifest <- read_tsv(
+  file.path(mini_path, "cgm.tsv"),
+  show_col_types = FALSE
+)
+activity_manifest <- read_tsv(
+  file.path(mini_path, "activity.tsv"),
+  show_col_types = FALSE
+)
+fullparticipants <-  read_tsv(
+  file.path(full_path, "participants.tsv"),
+  show_col_types = FALSE)
+
+rename_study_group <- function(x) {
+  case_match(
+    x,
+    "healthy" ~ "healthy",
+    "pre_diabetes_lifestyle_controlled" ~ "pre_diabetes",
+    "oral_medication_and_or_non_insulin_injectable_medication_controlled" ~ "oral_meds",
+    "insulin_dependent" ~ "insulin"
+  )
+}
+
+participants <- participants |>
+  mutate(study_group = rename_study_group(study_group))
+
+fullparticipants <- fullparticipants |>
+  mutate(study_group = rename_study_group(study_group))
+```
+
 # Cohort Table
 ```{R}
 #| message: false
 #| warning: false
 # clean data
-cgmdata <- cgm |> select(person_id, average_glucose_level_mg_dl)
-wearabledata <- activity |> select(person_id, average_daily_activity)
+cgmdata <- cgm_manifest |> 
+  select(person_id, average_glucose_level_mg_dl)
+activitydata <- activity_manifest |> 
+  select(person_id, average_daily_activity)
 ```
 
 ```{R}
 #| message: false
 #| warning: false
 # join data by person_id
-data <- participants |> left_join(cgmdata, by = join_by(person_id))
-data <- data |> left_join(wearabledata, by = join_by(person_id))
+data <- participants |> 
+  left_join(cgmdata, by = join_by(person_id))
+data <- data |> 
+  left_join(activitydata, by = join_by(person_id))
 ```
 
 ```{R}
 #| message: false
 #| warning: false
 # display
-gt(data)
+head(data)
 ```
+
+
+# Mini Dataset Analysis
+```{R}
+#| message: false
+#| warning: false
+studygroups <- participants |> 
+  count(study_group)
+gt(studygroups)
+```
+
+
+```{R}
+#| message: false
+#| warning: false
+participants |>
+  janitor::tabyl(clinical_site, study_group) |>
+  janitor::adorn_totals(c("row", "col")) |>
+  gt::gt()
+```
+
+
+```{R}
+#| message: false
+#| warning: false
+countcgm <- participants |> 
+  count(wearable_blood_glucose)
+countactivity <- participants |> 
+  count(wearable_activity_monitor)
+countclinical <- participants |> 
+  count(clinical_data)
+countcgmwearable <- participants |> 
+  count(wearable_blood_glucose, wearable_activity_monitor)
+countall <- participants |> 
+  count(wearable_blood_glucose, wearable_activity_monitor, clinical_data)
+
+counts <- transmute(countcgm, cgm = map_dbl(n, 1))
+counts <- counts |> 
+  cross_join(transmute(countactivity, activity = map_dbl(n, 1)))
+counts <- counts |> 
+  cross_join(transmute(countclinical, clinical = map_dbl(n, 1)))
+counts <- counts |> 
+  cross_join(transmute(countcgmwearable, cgmwearable = map_dbl(n, 1)))
+counts <- counts |> 
+  cross_join(transmute(countcgmwearable, cgmactivityclinical = map_dbl(n, 1)))
+
+gt(counts)
+```
+
+```{R}
+#| message: false
+#| warning: false
+
+modality_counts <- participants |>
+  select(
+    cardiac_ecg, 
+    clinical_data, 
+    environment, 
+    retinal_flio,
+    retinal_oct, 
+    retinal_octa, 
+    retinal_photography,
+    wearable_activity_monitor, 
+    wearable_blood_glucose
+  ) |>
+  mutate(across(everything(), as.logical)) |>
+  pivot_longer(
+    cols = everything(), 
+    names_to = "Modality", 
+    values_to = "Is_Available"
+  ) |>
+  filter(Is_Available == TRUE) |>
+  count(Modality, name = "Frequency") |>
+  mutate(Modality = fct_reorder(Modality, Frequency))
+```
+
+
+```{R}
+#| message: false
+#| warning: false
+ggplot(modality_counts, aes(x = Frequency, y = Modality, fill = Modality)) +
+  geom_col(show.legend = FALSE, alpha = 0.85) +
+  geom_text(aes(label = Frequency), hjust = -0.2, size = 4) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.15)))
+```
+
+
+# Mini vs Full
+- The mini dataset has `r nrow(participants)` participants, while the full dataset has `r format(nrow(fullparticipants), big.mark = ",", scientific = FALSE)` participants.
+- Both the full and mini have the same study groups and clinical sites.
+- The full data set has some gaps in availability, but the mini has full coverage.
+- any code written for the mini data set should run the same on the full data set.
+
+# Analysis Cohorts
+
+## CGM Cohort
+
+```{R}
+cgmcohort <- fullparticipants |> filter(wearable_blood_glucose)
+summary(cgmcohort)
+```
+
+- All participants with CGM data are in this cohort.
+- Contains `r format(nrow(cgmcohort), big.mark = ",", scientific = FALSE)` participants.
+- Represents all `r n_distinct(cgmcohort$study_group)` study groups.
+- Can be used to study how glucose changes in different people who have different conditions, as well as how glucose affects clinical data.
+- `r sum(!cgmcohort$wearable_activity_monitor, na.rm = TRUE)` participants in this cohort do not have wearable data, so this cohort alone cannot be used to study how lifestyle affects glucose for those participants.
+
+## CGM + Wearable Cohort
+
+```{R}
+cgmwearablecohort <- fullparticipants |> filter(wearable_blood_glucose, wearable_activity_monitor)
+summary(cgmwearablecohort)
+```
+
+- Participants who have both CGM and activity data are in this cohort.
+- It contains `r format(nrow(cgmwearablecohort), big.mark = ",", scientific = FALSE)` participants.
+- It can be used to study how glucose responds to lifestyle changes, as well as how that may affect clinical data.
+- It may not be used as a representative sample of the real population. Further 
+investigation is need to assess whether this cohort have selection bias towards 
+those who provided activity data.
+
 # Mini Dataset Analysis
 ```{R}
 #| message: false
@@ -58,19 +234,12 @@ gt(data)
 ```{R}
 #| message: false
 #| warning: false
-library(tidyverse)
-library(readr)
-library(gt)
 data <- participants |> count(clinical_site, study_group)
 gt(data, groupname_col = "clinical_site", row_group_as_column = TRUE)
 ```
 ```{R}
 #| message: false
 #| warning: false
-library(tidyverse)
-library(readr)
-library(purrr)
-library(gt)
 
 countcgm <- participants |> count(wearable_blood_glucose)
 countwearable <- participants |> count(wearable_activity_monitor)
@@ -121,7 +290,7 @@ ggplot(modality_counts, aes(x = Frequency, y = Modality, fill = Modality)) +
   scale_x_continuous(expand = expansion(mult = c(0, 0.15)))
 ```
 # Mini vs Full
-- Mini only has 100 participants, while the full dataset has 2k+.
+- Mini only has `r dim(participants)` participants, while the full dataset has 2k+.
 - Both the full and mini have the same study groups and clinical sites.
 - The full data set has some gaps in availability, but the mini has full coverage.
 - any code written for the mini data set should run the same on the full data set.
