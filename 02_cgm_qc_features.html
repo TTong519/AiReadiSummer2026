@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Tyler Tong">
-<meta name="dcterms.date" content="2026-07-20">
+<meta name="dcterms.date" content="2026-07-21">
 
 <title>CGM QC Features</title>
 <style>
@@ -2236,7 +2236,7 @@ vertical-align: -.125em;
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">July 20, 2026</p>
+      <p class="date">July 21, 2026</p>
     </div>
   </div>
   
@@ -2346,9 +2346,58 @@ vertical-align: -.125em;
 <span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
 <span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">mutate</span>(normal_cgm_readings, <span class="st">&quot;date(dt_local)&quot;</span> <span class="ot">=</span> <span class="fu">date</span>(dt_local))</span>
 <span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>joined <span class="ot">&lt;-</span> <span class="fu">left_join</span>(normal_cgm_readings, daycounts, <span class="at">by =</span> <span class="st">&quot;date(dt_local)&quot;</span> )</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>joined <span class="ot">&lt;-</span> <span class="fu">filter</span>(joined, n <span class="sc">&lt;=</span> <span class="dv">202</span>)</span>
+<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>joined <span class="ot">&lt;-</span> <span class="fu">filter</span>(joined, n <span class="sc">&gt;=</span> <span class="dv">202</span>)</span>
 <span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">select</span>(joined, <span class="sc">!</span>n)</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">select</span>(normal_cgm_readings, <span class="sc">!</span><span class="st">`</span><span class="at">date(dt_local)</span><span class="st">`</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">select</span>(normal_cgm_readings, <span class="sc">!</span><span class="st">`</span><span class="at">date(dt_local)</span><span class="st">`</span>)</span>
+<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="co"># create summary table</span></span>
+<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>validdaycounts <span class="ot">&lt;-</span> <span class="fu">filter</span>(daycounts, n <span class="sc">&gt;=</span> <span class="dv">202</span>)</span>
+<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>summary <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">num_readings =</span> <span class="fu">nrow</span>(normal_cgm_readings), </span>
+<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>                <span class="at">num_days =</span> <span class="fu">nrow</span>(validdaycounts), </span>
+<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>                <span class="at">mean_cgm =</span> <span class="fu">mean</span>(normal_cgm_readings<span class="sc">$</span>blood_glucose.value, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>                <span class="at">median_cgm =</span> <span class="fu">median</span>(normal_cgm_readings<span class="sc">$</span>blood_glucose.value, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>                <span class="at">sd_cgm =</span> <span class="fu">sd</span>(normal_cgm_readings<span class="sc">$</span>blood_glucose.value, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>                <span class="at">CV_cgm =</span> (<span class="fu">sd</span>(normal_cgm_readings<span class="sc">$</span>blood_glucose.value, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)<span class="sc">/</span></span>
+<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>                            <span class="fu">mean</span>(normal_cgm_readings<span class="sc">$</span>blood_glucose.value, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)) <span class="sc">*</span> <span class="dv">100</span>,</span>
+<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>                <span class="at">medium_cgm =</span> <span class="fu">sum</span>((</span>
+<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>                  normal_cgm_readings<span class="sc">$</span>blood_glucose.value <span class="sc">&gt;</span> <span class="dv">70</span> <span class="sc">&amp;</span> </span>
+<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>                    normal_cgm_readings<span class="sc">$</span>blood_glucose.value <span class="sc">&lt;</span> <span class="dv">180</span>), <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">*</span> <span class="dv">100</span><span class="sc">/</span></span>
+<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">nrow</span>(normal_cgm_readings),</span>
+<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>                <span class="at">low_cgm =</span> <span class="fu">sum</span>((normal_cgm_readings<span class="sc">$</span>blood_glucose.value <span class="sc">&lt;</span> <span class="dv">70</span>), <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">*</span> <span class="dv">100</span><span class="sc">/</span></span>
+<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">nrow</span>(normal_cgm_readings),</span>
+<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a>                <span class="at">high_cgm =</span> <span class="fu">sum</span>((normal_cgm_readings<span class="sc">$</span>blood_glucose.value <span class="sc">&gt;</span> <span class="dv">180</span>), <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">*</span> <span class="dv">100</span><span class="sc">/</span></span>
+<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">nrow</span>(normal_cgm_readings))</span>
+<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a>summary</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>$num_readings
+[1] 2592
+
+$num_days
+[1] 9
+
+$mean_cgm
+[1] 110.6605
+
+$median_cgm
+[1] 109
+
+$sd_cgm
+[1] 11.27419
+
+$CV_cgm
+[1] 10.18809
+
+$medium_cgm
+[1] 100
+
+$low_cgm
+[1] 0
+
+$high_cgm
+[1] 0</code></pre>
+</div>
 </div>
 </section>
 

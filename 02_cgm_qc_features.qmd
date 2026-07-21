@@ -95,8 +95,29 @@ head(daycounts)
 
 normal_cgm_readings <- mutate(normal_cgm_readings, "date(dt_local)" = date(dt_local))
 joined <- left_join(normal_cgm_readings, daycounts, by = "date(dt_local)" )
-joined <- filter(joined, n <= 202)
+joined <- filter(joined, n >= 202)
 normal_cgm_readings <- select(joined, !n)
 normal_cgm_readings <- select(normal_cgm_readings, !`date(dt_local)`)
+
+# create summary table
+
+validdaycounts <- filter(daycounts, n >= 202)
+summary <- list(num_readings = nrow(normal_cgm_readings), 
+                num_days = nrow(validdaycounts), 
+                mean_cgm = mean(normal_cgm_readings$blood_glucose.value, na.rm = TRUE),
+                median_cgm = median(normal_cgm_readings$blood_glucose.value, na.rm = TRUE),
+                sd_cgm = sd(normal_cgm_readings$blood_glucose.value, na.rm = TRUE),
+                CV_cgm = (sd(normal_cgm_readings$blood_glucose.value, na.rm = TRUE)/
+                            mean(normal_cgm_readings$blood_glucose.value, na.rm = TRUE)) * 100,
+                medium_cgm = sum((
+                  normal_cgm_readings$blood_glucose.value > 70 & 
+                    normal_cgm_readings$blood_glucose.value < 180), na.rm = TRUE) * 100/
+                  nrow(normal_cgm_readings),
+                low_cgm = sum((normal_cgm_readings$blood_glucose.value < 70), na.rm = TRUE) * 100/
+                  nrow(normal_cgm_readings),
+                high_cgm = sum((normal_cgm_readings$blood_glucose.value > 180), na.rm = TRUE) * 100/
+                  nrow(normal_cgm_readings))
+
+summary
 
 ```
