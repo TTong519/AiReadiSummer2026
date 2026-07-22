@@ -14,7 +14,8 @@ format:
 engine: knitr
 ---
 
-# Load packages and files
+# Load packages
+
 ```{R}
 #| message: false
 #| warning: false
@@ -25,30 +26,56 @@ library(purrr)
 library(janitor)
 library(jsonlite)
 library(lubridate)
-cgm <- fromJSON("~/AiReadi/AiReadiSummer2026/Data/mini/dexcom_g6/1029/1029_DEX.json", simplifyDataFrame = TRUE, flatten = TRUE)
+library(data.table)
 ```
 
+# Lead data
+
 ```{R}
+#| message: false
+#| warning: false
+datapath <- "/Users/tt/Library/CloudStorage/Box-Box/ai-readi/v3-mini/dataset"
+cgm_manifest_path <- "/wearable_blood_glucose/manifest.tsv"
+cgm_manifest <- read_tsv(paste0(datapath, cgm_manifest_path))
+participant_id <- c(1029)
+relative_path <- cgm_manifest |> 
+  filter(person_id %in% participant_id) |>
+  select(glucose_filepath)
+cgm <- fromJSON(file(paste0(datapath, relative_path)), flatten = TRUE)
+```
 
-# create new header
+# Create new header files
 
+```{r}
 uuid <- cgm$header$uuid
 timezone <- cgm$header$timezone
 schema_name <- cgm$header$schema_id$name
-newheader <- list(uuid = uuid, timezone = timezone, schema_name = schema_name)
+newheader <- tibble(uuid = uuid, 
+                    timezone = timezone, 
+                    schema_name = schema_name)
+cgm$header <- newheader
+cgm$header
+```
 
-# clean cgm readings
+# Clean cgm readings
 
-cgm_readings <- cgm$body$cgm |> as_tibble()
-cgm_readings <- filter(cgm_readings, event_type == "EGV", .preserve = TRUE)
+```{R}
+cgm_readings <- cgm$body$cgm |> 
+  as_tibble()
+cgm_readings <- cgm_readings |>
+  filter(event_type == "EGV", .preserve = TRUE)
 cgm_readings <- select(cgm_readings, 
                        event_type, 
                        effective_time_frame.time_interval.start_date_time, 
                        blood_glucose.unit, 
                        blood_glucose.value)
+```
 
-# get location based on timezone
+# Get location based on timezone
 
+```{r}
+newheader <- newheader |>
+  mutate(location = case_when())
 if(newheader$timezone == "pst" | newheader$timezone == "pdt")
   newheader$location <- "America/Los_Angeles"
 if(newheader$timezone == "mst" | newheader$timezone == "mdt")
@@ -57,50 +84,72 @@ if(newheader$timezone == "cst" | newheader$timezone == "cdt")
   newheader$location <- "America/Chicago"
 if(newheader$timezone == "est" | newheader$timezone == "edt")
   newheader$location <- "America/New_York"
+```
 
-# get datetime instead of char
+# Get datetime instead of char
 
-cgm_readings <- mutate(cgm_readings, datetime = ymd_hms(effective_time_frame.time_interval.start_date_time))
+```{R}
+cgm_readings <- cgm_readings |> 
+  mutate(datetime = ymd_hms(effective_time_frame.time_interval.start_date_time))
+```
 
-# convert to local time
+# Convert to local time
 
-cgm_readings <- mutate(cgm_readings, dt_local = 
-                         if_else(str_sub(effective_time_frame.time_interval.start_date_time, -1, -1) == "Z", 
-                       with_tz(time = datetime, tzone = newheader$location), 
-                       datetime
-                       ))
-cgm_readings <- select(cgm_readings, !datetime)
+```{R}
+cgm_readings <- cgm_readings |>
+  mutate(dt_local = 
+         if_else(str_sub(effective_time_frame.time_interval.start_date_time, -1, -1) == "Z", 
+       with_tz(time = datetime, tzone = newheader$location), 
+       datetime))
+cgm_readings <- cgm_readings 
+```
 
-# remove duplicates
+# Remove duplicates
+```{r}
+cgm_readings <- cgm_readings |>
+  distinct()
+```
 
-cgm_readings <- distinct(cgm_readings)
 
-# get unusual cgms and remove from dataset
+# Get unusual cgms and remove from dataset
 
-unusual_cgm_readings <- cgm_readings |> 
-  filter(blood_glucose.value > 400 | blood_glucose.value < 40, .preserve = TRUE)
-normal_cgm_readings <- anti_join(cgm_readings, unusual_cgm_readings, by = "dt_local")
+```{r}
+cgm_readings <- cgm_readings |>
+  mutate(is_unusual = (blood_glucose.value > 400 | blood_glucose.value < 40))
+normal_cgm_readings <- cgm_readings |>
+  filter(is_unusual == FALSE)
+```
 
-# create reading-level table
+# Create reading-level table
 
-reading_cgm <- select(normal_cgm_readings, blood_glucose.value, dt_local)
+```{R}
+reading_cgm <- normal_cgm_readings |> 
+  select(blood_glucose.value, dt_local)
 head(reading_cgm)
+```
 
-# count days
+# Count days
 
-daycounts <- count(normal_cgm_readings, date(dt_local))
+```{R}
+daycounts <- normal_cgm_readings |> 
+  count(date(dt_local))
 head(daycounts)
+```
 
-# remove invalid days
+# Remove invalid days
 
-normal_cgm_readings <- mutate(normal_cgm_readings, "date(dt_local)" = date(dt_local))
-joined <- left_join(normal_cgm_readings, daycounts, by = "date(dt_local)" )
-joined <- filter(joined, n >= 202)
-normal_cgm_readings <- select(joined, !n)
-normal_cgm_readings <- select(normal_cgm_readings, !`date(dt_local)`)
+```{R}
+normal_cgm_readings <- normal_cgm_readings |> 
+  mutate("date(dt_local)" = date(dt_local)) |>
+  left_join(daycounts, by = "date(dt_local)" ) |>
+  filter(n >= 202) |>
+  select(!n) |>
+  select(!`date(dt_local)`)
+```
 
-# create summary table
+# Create summary table
 
+```{R}
 validdaycounts <- filter(daycounts, n >= 202)
 summary <- list(num_readings = nrow(normal_cgm_readings), 
                 num_days = nrow(validdaycounts), 
@@ -120,4 +169,40 @@ summary <- list(num_readings = nrow(normal_cgm_readings),
 
 summary
 
+```
+
+# Participant day data
+
+```{R}
+day_time_start <- "06:00:00"
+day_time_end <- "23:59:59"
+normal_cgm_readings <- normal_cgm_readings |>
+  mutate(day = date(dt_local)) |>
+  group_by(day) |>
+  add_count(day) |>
+  rename(num_readings_day = n) |>
+  mutate(daily_pct_expected = num_readings_day * 100 / 288) |>
+  mutate(daily_avg_cgm = mean(blood_glucose.value)) |>
+  mutate(daily_cgm_sd = sd(blood_glucose.value)) |>
+  mutate(cgm_level = case_when(blood_glucose.value > 70 & 
+                    blood_glucose.value < 180 ~ "mid", 
+                   blood_glucose.value < 70 ~ "low",
+                   blood_glucose.value > 180 ~ "high")) |>
+  ungroup() |>
+  group_by(day, cgm_level) |>
+  add_count(cgm_level) |>
+  rename(num_category = n) |>
+  mutate(pct_category = num_category * 100 / 288) |>
+  ungroup() |>
+  group_by(day) |>
+  mutate(time_local = format(dt_local, format = "%H:%M:%S")) |>
+  mutate(is_day = case_when(as.ITime(time_local) >= as.ITime(day_time_start) & 
+                              as.ITime(time_local) <= as.ITime(day_time_end) ~ TRUE, 
+                            as.ITime(time_local) < as.ITime(day_time_start) | 
+                              as.ITime(time_local) > as.ITime(day_time_end) ~ FALSE)) |>
+  add_count(is_day) |>
+  ungroup() |>
+  group_by(day, is_day) |>
+  mutate(day_night_avg = mean(blood_glucose.value))
+glimpse(normal_cgm_readings)
 ```

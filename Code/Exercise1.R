@@ -31,4 +31,3 @@ ggplot() +
     x = "Date"
   ) +
   theme_minimal()
-

@@ -2210,6 +2210,17 @@ vertical-align: -.125em;
    
   <ul>
   <li><a href="#load-packages-and-files" id="toc-load-packages-and-files" class="nav-link active" data-scroll-target="#load-packages-and-files"><span class="header-section-number">1</span> Load packages and files</a></li>
+  <li><a href="#create-new-header" id="toc-create-new-header" class="nav-link" data-scroll-target="#create-new-header"><span class="header-section-number">2</span> Create new header</a></li>
+  <li><a href="#get-location-based-on-timezone" id="toc-get-location-based-on-timezone" class="nav-link" data-scroll-target="#get-location-based-on-timezone"><span class="header-section-number">3</span> Get location based on timezone</a></li>
+  <li><a href="#get-datetime-instead-of-char" id="toc-get-datetime-instead-of-char" class="nav-link" data-scroll-target="#get-datetime-instead-of-char"><span class="header-section-number">4</span> Get datetime instead of char</a></li>
+  <li><a href="#convert-to-local-time" id="toc-convert-to-local-time" class="nav-link" data-scroll-target="#convert-to-local-time"><span class="header-section-number">5</span> Convert to local time</a></li>
+  <li><a href="#remove-duplicates" id="toc-remove-duplicates" class="nav-link" data-scroll-target="#remove-duplicates"><span class="header-section-number">6</span> Remove duplicates</a></li>
+  <li><a href="#get-unusual-cgms-and-remove-from-dataset" id="toc-get-unusual-cgms-and-remove-from-dataset" class="nav-link" data-scroll-target="#get-unusual-cgms-and-remove-from-dataset"><span class="header-section-number">7</span> Get unusual cgms and remove from dataset</a></li>
+  <li><a href="#create-reading-level-table" id="toc-create-reading-level-table" class="nav-link" data-scroll-target="#create-reading-level-table"><span class="header-section-number">8</span> Create reading-level table</a></li>
+  <li><a href="#count-days" id="toc-count-days" class="nav-link" data-scroll-target="#count-days"><span class="header-section-number">9</span> Count days</a></li>
+  <li><a href="#remove-invalid-days" id="toc-remove-invalid-days" class="nav-link" data-scroll-target="#remove-invalid-days"><span class="header-section-number">10</span> Remove invalid days</a></li>
+  <li><a href="#create-summary-table" id="toc-create-summary-table" class="nav-link" data-scroll-target="#create-summary-table"><span class="header-section-number">11</span> Create summary table</a></li>
+  <li><a href="#participant-day-data" id="toc-participant-day-data" class="nav-link" data-scroll-target="#participant-day-data"><span class="header-section-number">12</span> Participant day data</a></li>
   </ul>
 </nav>
 </div>
@@ -2260,62 +2271,75 @@ vertical-align: -.125em;
 <span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(lubridate)</span>
 <span id="cb1-8"><a href="#cb1-8" aria-hidden="true" tabindex="-1"></a>cgm <span class="ot">&lt;-</span> <span class="fu">fromJSON</span>(<span class="st">&quot;~/AiReadi/AiReadiSummer2026/Data/mini/dexcom_g6/1029/1029_DEX.json&quot;</span>, <span class="at">simplifyDataFrame =</span> <span class="cn">TRUE</span>, <span class="at">flatten =</span> <span class="cn">TRUE</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </div>
+</section>
+<section id="create-new-header" class="level1" data-number="2">
+<h1 data-number="2"><span class="header-section-number">2</span> Create new header</h1>
 <div class="cell">
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a><span class="co"># create new header</span></span>
-<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>uuid <span class="ot">&lt;-</span> cgm<span class="sc">$</span>header<span class="sc">$</span>uuid</span>
-<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>timezone <span class="ot">&lt;-</span> cgm<span class="sc">$</span>header<span class="sc">$</span>timezone</span>
-<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a>schema_name <span class="ot">&lt;-</span> cgm<span class="sc">$</span>header<span class="sc">$</span>schema_id<span class="sc">$</span>name</span>
-<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a>newheader <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">uuid =</span> uuid, <span class="at">timezone =</span> timezone, <span class="at">schema_name =</span> schema_name)</span>
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>uuid <span class="ot">&lt;-</span> cgm<span class="sc">$</span>header<span class="sc">$</span>uuid</span>
+<span id="cb2-2"><a href="#cb2-2" aria-hidden="true" tabindex="-1"></a>timezone <span class="ot">&lt;-</span> cgm<span class="sc">$</span>header<span class="sc">$</span>timezone</span>
+<span id="cb2-3"><a href="#cb2-3" aria-hidden="true" tabindex="-1"></a>schema_name <span class="ot">&lt;-</span> cgm<span class="sc">$</span>header<span class="sc">$</span>schema_id<span class="sc">$</span>name</span>
+<span id="cb2-4"><a href="#cb2-4" aria-hidden="true" tabindex="-1"></a>newheader <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">uuid =</span> uuid, <span class="at">timezone =</span> timezone, <span class="at">schema_name =</span> schema_name)</span>
+<span id="cb2-5"><a href="#cb2-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb2-6"><a href="#cb2-6" aria-hidden="true" tabindex="-1"></a><span class="co"># clean cgm readings</span></span>
 <span id="cb2-7"><a href="#cb2-7" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a><span class="co"># clean cgm readings</span></span>
-<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>cgm_readings <span class="ot">&lt;-</span> cgm<span class="sc">$</span>body<span class="sc">$</span>cgm <span class="sc">|&gt;</span> <span class="fu">as_tibble</span>()</span>
-<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>cgm_readings <span class="ot">&lt;-</span> <span class="fu">filter</span>(cgm_readings, event_type <span class="sc">==</span> <span class="st">&quot;EGV&quot;</span>, <span class="at">.preserve =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>cgm_readings <span class="ot">&lt;-</span> <span class="fu">select</span>(cgm_readings, </span>
-<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>                       event_type, </span>
-<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>                       effective_time_frame.time_interval.start_date_time, </span>
-<span id="cb2-15"><a href="#cb2-15" aria-hidden="true" tabindex="-1"></a>                       blood_glucose.unit, </span>
-<span id="cb2-16"><a href="#cb2-16" aria-hidden="true" tabindex="-1"></a>                       blood_glucose.value)</span>
-<span id="cb2-17"><a href="#cb2-17" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-18"><a href="#cb2-18" aria-hidden="true" tabindex="-1"></a><span class="co"># get location based on timezone</span></span>
-<span id="cb2-19"><a href="#cb2-19" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-20"><a href="#cb2-20" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span>(newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;pst&quot;</span> <span class="sc">|</span> newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;pdt&quot;</span>)</span>
-<span id="cb2-21"><a href="#cb2-21" aria-hidden="true" tabindex="-1"></a>  newheader<span class="sc">$</span>location <span class="ot">&lt;-</span> <span class="st">&quot;America/Los_Angeles&quot;</span></span>
-<span id="cb2-22"><a href="#cb2-22" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span>(newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;mst&quot;</span> <span class="sc">|</span> newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;mdt&quot;</span>)</span>
-<span id="cb2-23"><a href="#cb2-23" aria-hidden="true" tabindex="-1"></a>  newheader<span class="sc">$</span>location <span class="ot">&lt;-</span> <span class="st">&quot;America/Denver&quot;</span></span>
-<span id="cb2-24"><a href="#cb2-24" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span>(newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;cst&quot;</span> <span class="sc">|</span> newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;cdt&quot;</span>)</span>
-<span id="cb2-25"><a href="#cb2-25" aria-hidden="true" tabindex="-1"></a>  newheader<span class="sc">$</span>location <span class="ot">&lt;-</span> <span class="st">&quot;America/Chicago&quot;</span></span>
-<span id="cb2-26"><a href="#cb2-26" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span>(newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;est&quot;</span> <span class="sc">|</span> newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;edt&quot;</span>)</span>
-<span id="cb2-27"><a href="#cb2-27" aria-hidden="true" tabindex="-1"></a>  newheader<span class="sc">$</span>location <span class="ot">&lt;-</span> <span class="st">&quot;America/New_York&quot;</span></span>
-<span id="cb2-28"><a href="#cb2-28" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-29"><a href="#cb2-29" aria-hidden="true" tabindex="-1"></a><span class="co"># get datetime instead of char</span></span>
-<span id="cb2-30"><a href="#cb2-30" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-31"><a href="#cb2-31" aria-hidden="true" tabindex="-1"></a>cgm_readings <span class="ot">&lt;-</span> <span class="fu">mutate</span>(cgm_readings, <span class="at">datetime =</span> <span class="fu">ymd_hms</span>(effective_time_frame.time_interval.start_date_time))</span>
-<span id="cb2-32"><a href="#cb2-32" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-33"><a href="#cb2-33" aria-hidden="true" tabindex="-1"></a><span class="co"># convert to local time</span></span>
-<span id="cb2-34"><a href="#cb2-34" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-35"><a href="#cb2-35" aria-hidden="true" tabindex="-1"></a>cgm_readings <span class="ot">&lt;-</span> <span class="fu">mutate</span>(cgm_readings, <span class="at">dt_local =</span> </span>
-<span id="cb2-36"><a href="#cb2-36" aria-hidden="true" tabindex="-1"></a>                         <span class="fu">if_else</span>(<span class="fu">str_sub</span>(effective_time_frame.time_interval.start_date_time, <span class="sc">-</span><span class="dv">1</span>, <span class="sc">-</span><span class="dv">1</span>) <span class="sc">==</span> <span class="st">&quot;Z&quot;</span>, </span>
-<span id="cb2-37"><a href="#cb2-37" aria-hidden="true" tabindex="-1"></a>                       <span class="fu">with_tz</span>(<span class="at">time =</span> datetime, <span class="at">tzone =</span> newheader<span class="sc">$</span>location), </span>
-<span id="cb2-38"><a href="#cb2-38" aria-hidden="true" tabindex="-1"></a>                       datetime</span>
-<span id="cb2-39"><a href="#cb2-39" aria-hidden="true" tabindex="-1"></a>                       ))</span>
-<span id="cb2-40"><a href="#cb2-40" aria-hidden="true" tabindex="-1"></a>cgm_readings <span class="ot">&lt;-</span> <span class="fu">select</span>(cgm_readings, <span class="sc">!</span>datetime)</span>
-<span id="cb2-41"><a href="#cb2-41" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-42"><a href="#cb2-42" aria-hidden="true" tabindex="-1"></a><span class="co"># remove duplicates</span></span>
-<span id="cb2-43"><a href="#cb2-43" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-44"><a href="#cb2-44" aria-hidden="true" tabindex="-1"></a>cgm_readings <span class="ot">&lt;-</span> <span class="fu">distinct</span>(cgm_readings)</span>
-<span id="cb2-45"><a href="#cb2-45" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-46"><a href="#cb2-46" aria-hidden="true" tabindex="-1"></a><span class="co"># get unusual cgms and remove from dataset</span></span>
-<span id="cb2-47"><a href="#cb2-47" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-48"><a href="#cb2-48" aria-hidden="true" tabindex="-1"></a>unusual_cgm_readings <span class="ot">&lt;-</span> cgm_readings <span class="sc">|&gt;</span> </span>
-<span id="cb2-49"><a href="#cb2-49" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(blood_glucose.value <span class="sc">&gt;</span> <span class="dv">400</span> <span class="sc">|</span> blood_glucose.value <span class="sc">&lt;</span> <span class="dv">40</span>, <span class="at">.preserve =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb2-50"><a href="#cb2-50" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">anti_join</span>(cgm_readings, unusual_cgm_readings, <span class="at">by =</span> <span class="st">&quot;dt_local&quot;</span>)</span>
-<span id="cb2-51"><a href="#cb2-51" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-52"><a href="#cb2-52" aria-hidden="true" tabindex="-1"></a><span class="co"># create reading-level table</span></span>
-<span id="cb2-53"><a href="#cb2-53" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb2-54"><a href="#cb2-54" aria-hidden="true" tabindex="-1"></a>reading_cgm <span class="ot">&lt;-</span> <span class="fu">select</span>(normal_cgm_readings, blood_glucose.value, dt_local)</span>
-<span id="cb2-55"><a href="#cb2-55" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(reading_cgm)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb2-8"><a href="#cb2-8" aria-hidden="true" tabindex="-1"></a>cgm_readings <span class="ot">&lt;-</span> cgm<span class="sc">$</span>body<span class="sc">$</span>cgm <span class="sc">|&gt;</span> <span class="fu">as_tibble</span>()</span>
+<span id="cb2-9"><a href="#cb2-9" aria-hidden="true" tabindex="-1"></a>cgm_readings <span class="ot">&lt;-</span> <span class="fu">filter</span>(cgm_readings, event_type <span class="sc">==</span> <span class="st">&quot;EGV&quot;</span>, <span class="at">.preserve =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb2-10"><a href="#cb2-10" aria-hidden="true" tabindex="-1"></a>cgm_readings <span class="ot">&lt;-</span> <span class="fu">select</span>(cgm_readings, </span>
+<span id="cb2-11"><a href="#cb2-11" aria-hidden="true" tabindex="-1"></a>                       event_type, </span>
+<span id="cb2-12"><a href="#cb2-12" aria-hidden="true" tabindex="-1"></a>                       effective_time_frame.time_interval.start_date_time, </span>
+<span id="cb2-13"><a href="#cb2-13" aria-hidden="true" tabindex="-1"></a>                       blood_glucose.unit, </span>
+<span id="cb2-14"><a href="#cb2-14" aria-hidden="true" tabindex="-1"></a>                       blood_glucose.value)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="get-location-based-on-timezone" class="level1" data-number="3">
+<h1 data-number="3"><span class="header-section-number">3</span> Get location based on timezone</h1>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb3"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span>(newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;pst&quot;</span> <span class="sc">|</span> newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;pdt&quot;</span>)</span>
+<span id="cb3-2"><a href="#cb3-2" aria-hidden="true" tabindex="-1"></a>  newheader<span class="sc">$</span>location <span class="ot">&lt;-</span> <span class="st">&quot;America/Los_Angeles&quot;</span></span>
+<span id="cb3-3"><a href="#cb3-3" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span>(newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;mst&quot;</span> <span class="sc">|</span> newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;mdt&quot;</span>)</span>
+<span id="cb3-4"><a href="#cb3-4" aria-hidden="true" tabindex="-1"></a>  newheader<span class="sc">$</span>location <span class="ot">&lt;-</span> <span class="st">&quot;America/Denver&quot;</span></span>
+<span id="cb3-5"><a href="#cb3-5" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span>(newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;cst&quot;</span> <span class="sc">|</span> newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;cdt&quot;</span>)</span>
+<span id="cb3-6"><a href="#cb3-6" aria-hidden="true" tabindex="-1"></a>  newheader<span class="sc">$</span>location <span class="ot">&lt;-</span> <span class="st">&quot;America/Chicago&quot;</span></span>
+<span id="cb3-7"><a href="#cb3-7" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span>(newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;est&quot;</span> <span class="sc">|</span> newheader<span class="sc">$</span>timezone <span class="sc">==</span> <span class="st">&quot;edt&quot;</span>)</span>
+<span id="cb3-8"><a href="#cb3-8" aria-hidden="true" tabindex="-1"></a>  newheader<span class="sc">$</span>location <span class="ot">&lt;-</span> <span class="st">&quot;America/New_York&quot;</span></span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="get-datetime-instead-of-char" class="level1" data-number="4">
+<h1 data-number="4"><span class="header-section-number">4</span> Get datetime instead of char</h1>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a>cgm_readings <span class="ot">&lt;-</span> <span class="fu">mutate</span>(cgm_readings, <span class="at">datetime =</span> <span class="fu">ymd_hms</span>(effective_time_frame.time_interval.start_date_time))</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="convert-to-local-time" class="level1" data-number="5">
+<h1 data-number="5"><span class="header-section-number">5</span> Convert to local time</h1>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a>cgm_readings <span class="ot">&lt;-</span> <span class="fu">mutate</span>(cgm_readings, <span class="at">dt_local =</span> </span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>                         <span class="fu">if_else</span>(<span class="fu">str_sub</span>(effective_time_frame.time_interval.start_date_time, <span class="sc">-</span><span class="dv">1</span>, <span class="sc">-</span><span class="dv">1</span>) <span class="sc">==</span> <span class="st">&quot;Z&quot;</span>, </span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>                       <span class="fu">with_tz</span>(<span class="at">time =</span> datetime, <span class="at">tzone =</span> newheader<span class="sc">$</span>location), </span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>                       datetime</span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>                       ))</span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>cgm_readings <span class="ot">&lt;-</span> <span class="fu">select</span>(cgm_readings, <span class="sc">!</span>datetime)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="remove-duplicates" class="level1" data-number="6">
+<h1 data-number="6"><span class="header-section-number">6</span> Remove duplicates</h1>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a>cgm_readings <span class="ot">&lt;-</span> <span class="fu">distinct</span>(cgm_readings)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="get-unusual-cgms-and-remove-from-dataset" class="level1" data-number="7">
+<h1 data-number="7"><span class="header-section-number">7</span> Get unusual cgms and remove from dataset</h1>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a>unusual_cgm_readings <span class="ot">&lt;-</span> cgm_readings <span class="sc">|&gt;</span> </span>
+<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter</span>(blood_glucose.value <span class="sc">&gt;</span> <span class="dv">400</span> <span class="sc">|</span> blood_glucose.value <span class="sc">&lt;</span> <span class="dv">40</span>, <span class="at">.preserve =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">anti_join</span>(cgm_readings, unusual_cgm_readings, <span class="at">by =</span> <span class="st">&quot;dt_local&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="create-reading-level-table" class="level1" data-number="8">
+<h1 data-number="8"><span class="header-section-number">8</span> Create reading-level table</h1>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb8"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1" aria-hidden="true" tabindex="-1"></a>reading_cgm <span class="ot">&lt;-</span> <span class="fu">select</span>(normal_cgm_readings, blood_glucose.value, dt_local)</span>
+<span id="cb8-2"><a href="#cb8-2" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(reading_cgm)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code># A tibble: 6 × 2
   blood_glucose.value dt_local           
@@ -2327,10 +2351,13 @@ vertical-align: -.125em;
 5                 125 2023-09-07 14:28:07
 6                 127 2023-09-07 14:33:07</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb4"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="co"># count days</span></span>
-<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a>daycounts <span class="ot">&lt;-</span> <span class="fu">count</span>(normal_cgm_readings, <span class="fu">date</span>(dt_local))</span>
-<span id="cb4-4"><a href="#cb4-4" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(daycounts)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="count-days" class="level1" data-number="9">
+<h1 data-number="9"><span class="header-section-number">9</span> Count days</h1>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a>daycounts <span class="ot">&lt;-</span> <span class="fu">count</span>(normal_cgm_readings, <span class="fu">date</span>(dt_local))</span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a><span class="fu">head</span>(daycounts)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code># A tibble: 6 × 2
   `date(dt_local)`     n
@@ -2342,34 +2369,39 @@ vertical-align: -.125em;
 5 2023-09-11         288
 6 2023-09-12         288</code></pre>
 </div>
-<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb6"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1" aria-hidden="true" tabindex="-1"></a><span class="co"># remove invalid days</span></span>
-<span id="cb6-2"><a href="#cb6-2" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-3"><a href="#cb6-3" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">mutate</span>(normal_cgm_readings, <span class="st">&quot;date(dt_local)&quot;</span> <span class="ot">=</span> <span class="fu">date</span>(dt_local))</span>
-<span id="cb6-4"><a href="#cb6-4" aria-hidden="true" tabindex="-1"></a>joined <span class="ot">&lt;-</span> <span class="fu">left_join</span>(normal_cgm_readings, daycounts, <span class="at">by =</span> <span class="st">&quot;date(dt_local)&quot;</span> )</span>
-<span id="cb6-5"><a href="#cb6-5" aria-hidden="true" tabindex="-1"></a>joined <span class="ot">&lt;-</span> <span class="fu">filter</span>(joined, n <span class="sc">&gt;=</span> <span class="dv">202</span>)</span>
-<span id="cb6-6"><a href="#cb6-6" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">select</span>(joined, <span class="sc">!</span>n)</span>
-<span id="cb6-7"><a href="#cb6-7" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">select</span>(normal_cgm_readings, <span class="sc">!</span><span class="st">`</span><span class="at">date(dt_local)</span><span class="st">`</span>)</span>
-<span id="cb6-8"><a href="#cb6-8" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-9"><a href="#cb6-9" aria-hidden="true" tabindex="-1"></a><span class="co"># create summary table</span></span>
-<span id="cb6-10"><a href="#cb6-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-11"><a href="#cb6-11" aria-hidden="true" tabindex="-1"></a>validdaycounts <span class="ot">&lt;-</span> <span class="fu">filter</span>(daycounts, n <span class="sc">&gt;=</span> <span class="dv">202</span>)</span>
-<span id="cb6-12"><a href="#cb6-12" aria-hidden="true" tabindex="-1"></a>summary <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">num_readings =</span> <span class="fu">nrow</span>(normal_cgm_readings), </span>
-<span id="cb6-13"><a href="#cb6-13" aria-hidden="true" tabindex="-1"></a>                <span class="at">num_days =</span> <span class="fu">nrow</span>(validdaycounts), </span>
-<span id="cb6-14"><a href="#cb6-14" aria-hidden="true" tabindex="-1"></a>                <span class="at">mean_cgm =</span> <span class="fu">mean</span>(normal_cgm_readings<span class="sc">$</span>blood_glucose.value, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb6-15"><a href="#cb6-15" aria-hidden="true" tabindex="-1"></a>                <span class="at">median_cgm =</span> <span class="fu">median</span>(normal_cgm_readings<span class="sc">$</span>blood_glucose.value, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb6-16"><a href="#cb6-16" aria-hidden="true" tabindex="-1"></a>                <span class="at">sd_cgm =</span> <span class="fu">sd</span>(normal_cgm_readings<span class="sc">$</span>blood_glucose.value, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
-<span id="cb6-17"><a href="#cb6-17" aria-hidden="true" tabindex="-1"></a>                <span class="at">CV_cgm =</span> (<span class="fu">sd</span>(normal_cgm_readings<span class="sc">$</span>blood_glucose.value, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)<span class="sc">/</span></span>
-<span id="cb6-18"><a href="#cb6-18" aria-hidden="true" tabindex="-1"></a>                            <span class="fu">mean</span>(normal_cgm_readings<span class="sc">$</span>blood_glucose.value, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)) <span class="sc">*</span> <span class="dv">100</span>,</span>
-<span id="cb6-19"><a href="#cb6-19" aria-hidden="true" tabindex="-1"></a>                <span class="at">medium_cgm =</span> <span class="fu">sum</span>((</span>
-<span id="cb6-20"><a href="#cb6-20" aria-hidden="true" tabindex="-1"></a>                  normal_cgm_readings<span class="sc">$</span>blood_glucose.value <span class="sc">&gt;</span> <span class="dv">70</span> <span class="sc">&amp;</span> </span>
-<span id="cb6-21"><a href="#cb6-21" aria-hidden="true" tabindex="-1"></a>                    normal_cgm_readings<span class="sc">$</span>blood_glucose.value <span class="sc">&lt;</span> <span class="dv">180</span>), <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">*</span> <span class="dv">100</span><span class="sc">/</span></span>
-<span id="cb6-22"><a href="#cb6-22" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">nrow</span>(normal_cgm_readings),</span>
-<span id="cb6-23"><a href="#cb6-23" aria-hidden="true" tabindex="-1"></a>                <span class="at">low_cgm =</span> <span class="fu">sum</span>((normal_cgm_readings<span class="sc">$</span>blood_glucose.value <span class="sc">&lt;</span> <span class="dv">70</span>), <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">*</span> <span class="dv">100</span><span class="sc">/</span></span>
-<span id="cb6-24"><a href="#cb6-24" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">nrow</span>(normal_cgm_readings),</span>
-<span id="cb6-25"><a href="#cb6-25" aria-hidden="true" tabindex="-1"></a>                <span class="at">high_cgm =</span> <span class="fu">sum</span>((normal_cgm_readings<span class="sc">$</span>blood_glucose.value <span class="sc">&gt;</span> <span class="dv">180</span>), <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">*</span> <span class="dv">100</span><span class="sc">/</span></span>
-<span id="cb6-26"><a href="#cb6-26" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">nrow</span>(normal_cgm_readings))</span>
-<span id="cb6-27"><a href="#cb6-27" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb6-28"><a href="#cb6-28" aria-hidden="true" tabindex="-1"></a>summary</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="remove-invalid-days" class="level1" data-number="10">
+<h1 data-number="10"><span class="header-section-number">10</span> Remove invalid days</h1>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb12"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">mutate</span>(normal_cgm_readings, <span class="st">&quot;date(dt_local)&quot;</span> <span class="ot">=</span> <span class="fu">date</span>(dt_local)) <span class="sc">|&gt;</span></span>
+<span id="cb12-2"><a href="#cb12-2" aria-hidden="true" tabindex="-1"></a><span class="fu">left_join</span>(daycounts, <span class="at">by =</span> <span class="st">&quot;date(dt_local)&quot;</span> ) <span class="sc">|&gt;</span></span>
+<span id="cb12-3"><a href="#cb12-3" aria-hidden="true" tabindex="-1"></a><span class="fu">filter</span>(n <span class="sc">&gt;=</span> <span class="dv">202</span>) <span class="sc">|&gt;</span></span>
+<span id="cb12-4"><a href="#cb12-4" aria-hidden="true" tabindex="-1"></a><span class="fu">select</span>(<span class="sc">!</span>n) <span class="sc">|&gt;</span></span>
+<span id="cb12-5"><a href="#cb12-5" aria-hidden="true" tabindex="-1"></a><span class="fu">select</span>(<span class="sc">!</span><span class="st">`</span><span class="at">date(dt_local)</span><span class="st">`</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+</div>
+</section>
+<section id="create-summary-table" class="level1" data-number="11">
+<h1 data-number="11"><span class="header-section-number">11</span> Create summary table</h1>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a>validdaycounts <span class="ot">&lt;-</span> <span class="fu">filter</span>(daycounts, n <span class="sc">&gt;=</span> <span class="dv">202</span>)</span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a>summary <span class="ot">&lt;-</span> <span class="fu">list</span>(<span class="at">num_readings =</span> <span class="fu">nrow</span>(normal_cgm_readings), </span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a>                <span class="at">num_days =</span> <span class="fu">nrow</span>(validdaycounts), </span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>                <span class="at">mean_cgm =</span> <span class="fu">mean</span>(normal_cgm_readings<span class="sc">$</span>blood_glucose.value, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>                <span class="at">median_cgm =</span> <span class="fu">median</span>(normal_cgm_readings<span class="sc">$</span>blood_glucose.value, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>                <span class="at">sd_cgm =</span> <span class="fu">sd</span>(normal_cgm_readings<span class="sc">$</span>blood_glucose.value, <span class="at">na.rm =</span> <span class="cn">TRUE</span>),</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>                <span class="at">CV_cgm =</span> (<span class="fu">sd</span>(normal_cgm_readings<span class="sc">$</span>blood_glucose.value, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)<span class="sc">/</span></span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>                            <span class="fu">mean</span>(normal_cgm_readings<span class="sc">$</span>blood_glucose.value, <span class="at">na.rm =</span> <span class="cn">TRUE</span>)) <span class="sc">*</span> <span class="dv">100</span>,</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a>                <span class="at">medium_cgm =</span> <span class="fu">sum</span>((</span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>                  normal_cgm_readings<span class="sc">$</span>blood_glucose.value <span class="sc">&gt;</span> <span class="dv">70</span> <span class="sc">&amp;</span> </span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>                    normal_cgm_readings<span class="sc">$</span>blood_glucose.value <span class="sc">&lt;</span> <span class="dv">180</span>), <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">*</span> <span class="dv">100</span><span class="sc">/</span></span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">nrow</span>(normal_cgm_readings),</span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>                <span class="at">low_cgm =</span> <span class="fu">sum</span>((normal_cgm_readings<span class="sc">$</span>blood_glucose.value <span class="sc">&lt;</span> <span class="dv">70</span>), <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">*</span> <span class="dv">100</span><span class="sc">/</span></span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">nrow</span>(normal_cgm_readings),</span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a>                <span class="at">high_cgm =</span> <span class="fu">sum</span>((normal_cgm_readings<span class="sc">$</span>blood_glucose.value <span class="sc">&gt;</span> <span class="dv">180</span>), <span class="at">na.rm =</span> <span class="cn">TRUE</span>) <span class="sc">*</span> <span class="dv">100</span><span class="sc">/</span></span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a>                  <span class="fu">nrow</span>(normal_cgm_readings))</span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>summary</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 <div class="cell-output cell-output-stdout">
 <pre><code>$num_readings
 [1] 2592
@@ -2397,6 +2429,32 @@ $low_cgm
 
 $high_cgm
 [1] 0</code></pre>
+</div>
+</div>
+</section>
+<section id="participant-day-data" class="level1" data-number="12">
+<h1 data-number="12"><span class="header-section-number">12</span> Participant day data</h1>
+<div class="cell">
+<div class="code-copy-outer-scaffold"><div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">mutate</span>(normal_cgm_readings, <span class="at">day =</span> <span class="fu">date</span>(dt_local))</span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">group_by</span>(normal_cgm_readings, day)</span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">add_count</span>(normal_cgm_readings, day)</span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">rename</span>(normal_cgm_readings, <span class="at">num_readings_day =</span> n)</span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">mutate</span>(normal_cgm_readings, <span class="at">daily_pct_expected =</span> num_readings_day <span class="sc">*</span> <span class="dv">100</span> <span class="sc">/</span><span class="dv">288</span>)</span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a>normal_cgm_readings <span class="ot">&lt;-</span> <span class="fu">mutate</span>(normal_cgm_readings, <span class="at">daily_avg_cgm =</span> <span class="fu">mean</span>(blood_glucose.value))</span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="fu">glimpse</span>(normal_cgm_readings)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Rows: 2,592
+Columns: 9
+Groups: day [9]
+$ event_type                                         &lt;chr&gt; &quot;EGV&quot;, &quot;EGV&quot;, &quot;EGV&quot;…
+$ effective_time_frame.time_interval.start_date_time &lt;chr&gt; &quot;2023-09-08T07:03:0…
+$ blood_glucose.unit                                 &lt;chr&gt; &quot;mg/dL&quot;, &quot;mg/dL&quot;, &quot;…
+$ blood_glucose.value                                &lt;int&gt; 127, 123, 119, 116,…
+$ dt_local                                           &lt;dttm&gt; 2023-09-08 00:03:0…
+$ day                                                &lt;date&gt; 2023-09-08, 2023-0…
+$ num_readings_day                                   &lt;int&gt; 288, 288, 288, 288,…
+$ daily_pct_expected                                 &lt;dbl&gt; 100, 100, 100, 100,…
+$ daily_avg_cgm                                      &lt;dbl&gt; 109.5, 109.5, 109.5…</code></pre>
 </div>
 </div>
 </section>
