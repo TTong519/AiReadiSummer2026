@@ -1,0 +1,1192 @@
+---
+title: "Week 3: Sleep and Activity Data Processing"
+author: "Tyler Tong"
+date: today
+format:
+  html:
+    theme: cosmo
+    embed-resources: true
+    number-sections: true
+    toc: true
+    toc-depth: 4
+    toc-location: left
+    code-fold: false
+engine: knitr
+execute:
+  warning: false
+  message: false
+---
+
+# Sleep Data in AI-Readi
+
+AI-READI used the Garmin vívosmart 5.
+
+  - Participants were asked to wear it for 10 consecutive days.
+ 
+  - They were advised to use the non-dominant wrist, but could choose either wrist.
+  
+  - The actual wrist and dominant hand were recorded when the device was returned.
+  
+  - It was worn concurrently with the Dexcom CGM and the home environmental sensor.
+  
+  - The battery required charging every 2–3 days, so charging may cause gaps.
+  
+  - Before distribution, staff recorded the device serial number and distribution date. At return, they recorded the return date, worn wrist, and dominant hand.
+  
+  - Garmin data were extracted from proprietary .FIT files and converted into Open mHealth JSON.
+  
+  - The tracker’s general sampling frequency is documented as 5 seconds, but the released sleep data are consolidated stage intervals—not 5-second observations.
+  
+  - The watch automatically detects sleep and movement during the user’s configured normal sleep hours. Garmin Connect permits normal sleep hours to be configured, but AI-READI does not provide those participant-specific settings in the released files.
+
+Note:
+
+> **A sleep night is labeled by its wake-up date.**
+
+For example, sleep beginning Monday night and ending Tuesday morning is labeled Tuesday.
+
+# Preparation
+
+## Load packages and find the data
+
+```{r}
+rm(list = ls())
+
+library(tidyverse)
+library(here)
+library(jsonlite)
+library(janitor)
+library(knitr)
+library(scales)
+library(patchwork)
+
+options(
+  dplyr.summarise.inform = FALSE,
+  scipen = 999
+)
+
+theme_set(
+  theme_minimal(base_size = 12) +
+    theme(
+      plot.title.position = "plot",
+      panel.grid.minor = element_blank()
+    )
+)
+
+dataset_version <- "v3-mini"
+
+data_dir <- paste0("/Users/tt/Library/CloudStorage/Box-Box/ai-readi/", dataset_version, "/dataset")
+
+derived_dir <- here("practice", "derived")
+dir.create(derived_dir, recursive = TRUE, showWarnings = FALSE)
+
+resolve_data_path <- function(relative_path) {
+  file.path(data_dir, str_remove(relative_path, "^/"))
+}
+```
+
+## Analysis rules
+
+```{r}
+sleep_gap_minutes <- 90
+minimum_main_sleep_minutes <- 4 * 60
+maximum_main_sleep_minutes <- 14 * 60
+minimum_activity_observation_hours <- 20
+
+timezone_lookup <- tribble(
+  ~timezone_label, ~iana_timezone,          ~timezone_region,
+  "pst",           "America/Los_Angeles",   "Pacific",
+  "pdt",           "America/Los_Angeles",   "Pacific",
+  "mst",           "America/Denver",        "Mountain",
+  "mdt",           "America/Denver",        "Mountain",
+  "cst",           "America/Chicago",       "Central",
+  "cdt",           "America/Chicago",       "Central",
+  "est",           "America/New_York",      "Eastern",
+  "edt",           "America/New_York",      "Eastern"
+)
+
+site_lookup <- tribble(
+  ~clinical_site, ~site_region,
+  "UW",           "Pacific",
+  "UCSD",         "Pacific",
+  "UAB",          "Central"
+)
+
+study_group_labels <- c(
+  healthy = "Healthy",
+  pre_diabetes_lifestyle_controlled = "Pre-DM / lifestyle",
+  oral_medication_and_or_non_insulin_injectable_medication_controlled =
+    "Oral/non-insulin medication",
+  insulin_dependent = "Insulin-dependent"
+)
+
+lookup_timezone <- function(timezone_label) {
+  timezone_lookup |>
+    filter(.data$timezone_label == tolower(timezone_label)) |>
+    pull(iana_timezone) |>
+    first(default = NA_character_)
+}
+
+local_date_character <- function(time_utc, timezone) {
+  format(with_tz(time_utc, timezone), "%Y-%m-%d")
+}
+
+local_datetime_character <- function(time_utc, timezone) {
+  format(with_tz(time_utc, timezone), "%Y-%m-%d %H:%M:%S %Z")
+}
+
+local_clock_hour <- function(time_utc, timezone) {
+  local_time <- with_tz(time_utc, timezone)
+  hour(local_time) + minute(local_time) / 60 + second(local_time) / 3600
+}
+
+sleep_output_path <- file.path(
+  derived_dir,
+  "week3_person_night_sleep.csv"
+)
+
+activity_output_path <- file.path(
+  derived_dir,
+  "week3_daily_activity.csv"
+)
+```
+
+The rules:
+
+- Sleep-stage segments separated by more than 90 minutes start a new sleep episode.
+- A candidate main-sleep episode must span 4--14 hours.
+- If more than one eligible episode ends on the same local date, the longest episode is retained as that person's main sleep for that date.
+- A daily activity total is marked complete when at least 20 hours of step intervals are observed, at least one positive heart-rate record supports device wear, and the daily step total is nonzero.
+- Device timezone labels are mapped to IANA regional timezones so daylight-saving rules are applied correctly.
+
+# Read participant and wearable manifests
+
+```{r}
+participants <- read_tsv(
+  file.path(data_dir, "participants.tsv"),
+  show_col_types = FALSE
+) |>
+  clean_names() |>
+  mutate(
+    person_id = as.character(person_id),
+    study_group_label = factor(
+      unname(study_group_labels[study_group]),
+      levels = unname(study_group_labels)
+    )
+  )
+
+wearable_manifest <- read_tsv(
+  file.path(data_dir, "wearable_activity_monitor", "manifest.tsv"),
+  show_col_types = FALSE
+) |>
+  clean_names() |>
+  mutate(person_id = as.character(person_id))
+
+cgm_manifest <- read_tsv(
+  file.path(data_dir, "wearable_blood_glucose", "manifest.tsv"),
+  show_col_types = FALSE
+) |>
+  clean_names() |>
+  mutate(person_id = as.character(person_id))
+
+tibble(
+  source = c("Participant table", "Wearable manifest", "CGM manifest"),
+  participants = c(
+    n_distinct(participants$person_id),
+    n_distinct(wearable_manifest$person_id),
+    n_distinct(cgm_manifest$person_id)
+  )
+) |>
+  kable(
+    col.names = c("Source", "Unique participants"),
+    caption = "Available AI-READI v3-mini records"
+  )
+```
+
+# Sleep Table
+
+## Read sleep-stage segments
+
+```{r}
+read_sleep_file <- function(person_id, relative_path) {
+  sleep_json <- fromJSON(
+    resolve_data_path(relative_path),
+    flatten = TRUE
+  )
+
+  sleep_body <- sleep_json$body$sleep
+  timezone_label <- tolower(as.character(sleep_json$header$timezone)[1])
+  iana_timezone <- lookup_timezone(timezone_label)
+
+  tibble(
+    person_id = as.character(person_id),
+    timezone_label = timezone_label,
+    timezone = iana_timezone,
+    stage = str_to_lower(as.character(sleep_body$sleep_stage_state)),
+    start_utc = ymd_hms(
+      sleep_body$effective_time_frame.time_interval.start_date_time,
+      tz = "UTC",
+      quiet = TRUE
+    ),
+    end_utc = ymd_hms(
+      sleep_body$effective_time_frame.time_interval.end_date_time,
+      tz = "UTC",
+      quiet = TRUE
+    )
+  ) |>
+    mutate(
+      duration_minutes = as.numeric(
+        difftime(end_utc, start_utc, units = "mins")
+      )
+    ) |>
+    filter(
+      stage %in% c("light", "deep", "rem", "awake"),
+      !is.na(start_utc),
+      !is.na(end_utc),
+      duration_minutes > 0
+    )
+}
+
+sleep_segments <- map2_dfr(
+  wearable_manifest$person_id,
+  wearable_manifest$sleep_filepath,
+  read_sleep_file
+)
+```
+
+## Reconstruct sleep episodes from sleep segments
+
+```{r}
+sleep_segments_with_episodes <- sleep_segments |>
+  arrange(person_id, start_utc, end_utc) |>
+  group_by(person_id) |>
+  mutate(
+    gap_minutes = as.numeric(
+      difftime(start_utc, lag(end_utc), units = "mins")
+    ),
+    starts_new_episode = is.na(gap_minutes) |
+      gap_minutes > sleep_gap_minutes,
+    episode_id = cumsum(starts_new_episode)
+  ) |>
+  ungroup()
+
+summarise_sleep_episode <- function(segment_table, keys) {
+  asleep_segments <- segment_table |>
+    filter(stage != "awake")
+
+  if (nrow(asleep_segments) == 0) {
+    return(tibble())
+  }
+
+  first_sleep_utc <- min(asleep_segments$start_utc)
+  last_sleep_utc <- max(asleep_segments$end_utc)
+
+  awake_overlap_minutes <- segment_table |>
+    filter(stage == "awake") |>
+    transmute(
+      overlap_minutes = pmax(
+        0,
+        (
+          pmin(as.numeric(end_utc), as.numeric(last_sleep_utc)) -
+            pmax(as.numeric(start_utc), as.numeric(first_sleep_utc))
+        ) / 60
+      )
+    ) |>
+    summarise(value = sum(overlap_minutes, na.rm = TRUE)) |>
+    pull(value)
+
+  tibble(
+    bedtime_utc = min(segment_table$start_utc),
+    wake_time_utc = max(segment_table$end_utc),
+    total_sleep_time_minutes = sum(
+      segment_table$duration_minutes[segment_table$stage != "awake"],
+      na.rm = TRUE
+    ),
+    light_minutes = sum(
+      segment_table$duration_minutes[segment_table$stage == "light"],
+      na.rm = TRUE
+    ),
+    deep_minutes = sum(
+      segment_table$duration_minutes[segment_table$stage == "deep"],
+      na.rm = TRUE
+    ),
+    rem_minutes = sum(
+      segment_table$duration_minutes[segment_table$stage == "rem"],
+      na.rm = TRUE
+    ),
+    awake_minutes = sum(
+      segment_table$duration_minutes[segment_table$stage == "awake"],
+      na.rm = TRUE
+    ),
+    awake_after_sleep_onset_minutes = awake_overlap_minutes,
+    number_of_segments = nrow(segment_table)
+  )
+}
+
+sleep_episodes <- sleep_segments_with_episodes |>
+  group_by(person_id, timezone_label, timezone, episode_id) |>
+  group_modify(summarise_sleep_episode) |>
+  ungroup() |>
+  mutate(
+    time_in_bed_minutes = as.numeric(
+      difftime(wake_time_utc, bedtime_utc, units = "mins")
+    ),
+    recorded_stage_minutes =
+      light_minutes + deep_minutes + rem_minutes + awake_minutes,
+    sleep_efficiency_percent =
+      100 * total_sleep_time_minutes / time_in_bed_minutes,
+    percent_light = 100 * light_minutes / time_in_bed_minutes,
+    percent_deep = 100 * deep_minutes / time_in_bed_minutes,
+    percent_rem = 100 * rem_minutes / time_in_bed_minutes,
+    percent_awake = 100 * awake_minutes / time_in_bed_minutes,
+    percent_unclassified = 100 * pmax(
+      0,
+      time_in_bed_minutes - recorded_stage_minutes
+    ) / time_in_bed_minutes,
+    sleep_night = as.Date(
+      map2_chr(wake_time_utc, timezone, local_date_character)
+    ),
+    bedtime_local = map2_chr(
+      bedtime_utc,
+      timezone,
+      local_datetime_character
+    ),
+    wake_time_local = map2_chr(
+      wake_time_utc,
+      timezone,
+      local_datetime_character
+    ),
+    duration_is_plausible =
+      between(
+        time_in_bed_minutes,
+        minimum_main_sleep_minutes,
+        maximum_main_sleep_minutes
+      ),
+    segments_do_not_overlap =
+      total_sleep_time_minutes <= time_in_bed_minutes &
+      recorded_stage_minutes <= time_in_bed_minutes + 1
+  )
+```
+
+## Keep one plausible main sleep episode per person-night
+
+```{r}
+person_night_sleep <- sleep_episodes |>
+  filter(
+    duration_is_plausible,
+    segments_do_not_overlap
+  ) |>
+  group_by(person_id, sleep_night) |>
+  arrange(desc(time_in_bed_minutes), episode_id) |>
+  slice_head(n = 1) |>
+  ungroup() |>
+  left_join(
+    participants |>
+      select(
+        person_id,
+        clinical_site,
+        study_group,
+        study_group_label
+      ),
+    by = "person_id"
+  ) |>
+  arrange(person_id, sleep_night) |>
+  select(
+    person_id,
+    sleep_night,
+    bedtime_local,
+    wake_time_local,
+    bedtime_utc,
+    wake_time_utc,
+    timezone_label,
+    timezone,
+    total_sleep_time_minutes,
+    time_in_bed_minutes,
+    sleep_efficiency_percent,
+    awake_after_sleep_onset_minutes,
+    percent_light,
+    percent_deep,
+    percent_rem,
+    percent_awake,
+    percent_unclassified,
+    number_of_segments,
+    clinical_site,
+    study_group,
+    study_group_label
+  )
+
+write_csv(person_night_sleep, sleep_output_path, na = "")
+```
+
+## Sleep-table quality checks
+
+```{r}
+sleep_timezone_qc <- sleep_segments |>
+  distinct(person_id, timezone_label, timezone) |>
+  left_join(
+    participants |>
+      select(person_id, clinical_site),
+    by = "person_id"
+  ) |>
+  left_join(
+    timezone_lookup,
+    by = c(
+      "timezone_label" = "timezone_label",
+      "timezone" = "iana_timezone"
+    )
+  ) |>
+  left_join(site_lookup, by = "clinical_site") |>
+  mutate(region_agrees = timezone_region == site_region)
+
+sleep_key_duplicates <- person_night_sleep |>
+  count(person_id, sleep_night) |>
+  filter(n > 1) |>
+  nrow()
+
+stage_sum_range <- person_night_sleep |>
+  transmute(
+    stage_sum =
+      percent_light + percent_deep + percent_rem + percent_awake
+  ) |>
+  summarise(
+    minimum = min(stage_sum, na.rm = TRUE),
+    maximum = max(stage_sum, na.rm = TRUE)
+  )
+
+tibble(
+  check = c(
+    "Raw sleep-stage segments",
+    "Candidate sleep episodes",
+    "Final person-nights",
+    "Participants with a final night",
+    "Duplicate person-night keys",
+    "Timezone/site region mismatches"
+  ),
+  result = c(
+    nrow(sleep_segments),
+    nrow(sleep_episodes),
+    nrow(person_night_sleep),
+    n_distinct(person_night_sleep$person_id),
+    sleep_key_duplicates,
+    sum(!sleep_timezone_qc$region_agrees, na.rm = TRUE)
+  )
+) |>
+  kable(
+    col.names = c("Quality-control check", "Result"),
+    caption = "Sleep processing checks"
+  )
+```
+
+The four recorded sleep-stage percentages sum to between
+`r round(stage_sum_range$minimum, 1)`% and
+`r round(stage_sum_range$maximum, 1)`% across retained nights. Any remaining percentage is labeled unclassified time inside the bedtime-to-wake interval rather than silently assigned to a sleep stage.
+
+## Person-night sleep table
+
+```{r}
+person_night_sleep |>
+  select(
+    person_id,
+    sleep_night,
+    bedtime_local,
+    wake_time_local,
+    total_sleep_time_minutes,
+    time_in_bed_minutes,
+    sleep_efficiency_percent,
+    awake_after_sleep_onset_minutes,
+    percent_light,
+    percent_deep,
+    percent_rem,
+    percent_awake
+  ) |>
+  slice_head(n = 12) |>
+  mutate(
+    across(
+      where(is.numeric),
+      ~ round(.x, 1)
+    )
+  ) |>
+  kable(
+    col.names = c(
+      "Participant",
+      "Sleep night",
+      "Bedtime (local)",
+      "Wake time (local)",
+      "TST (min)",
+      "TIB (min)",
+      "Efficiency (%)",
+      "WASO (min)",
+      "Light (%)",
+      "Deep (%)",
+      "REM (%)",
+      "Awake (%)"
+    ),
+    caption = "First 12 rows of the person-night sleep table"
+  )
+```
+
+The complete table contains `r nrow(person_night_sleep)` person-nights from `r n_distinct(person_night_sleep$person_id)` participants and is saved as `practice/derived/week3_person_night_sleep.csv`.
+
+# Activity Table
+
+## Read step, calorie, and heart-rate records
+
+```{r}
+read_step_file <- function(person_id, relative_path) {
+  activity_json <- fromJSON(
+    resolve_data_path(relative_path),
+    flatten = TRUE
+  )
+
+  activity_body <- activity_json$body$activity
+  timezone_label <- tolower(as.character(activity_json$header$timezone)[1])
+  iana_timezone <- lookup_timezone(timezone_label)
+
+  if (is.na(iana_timezone)) {
+    stop("Unrecognized activity timezone label for participant ", person_id)
+  }
+
+  tibble(
+    person_id = as.character(person_id),
+    timezone = iana_timezone,
+    start_utc = ymd_hms(
+      activity_body$effective_time_frame.time_interval.start_date_time,
+      tz = "UTC",
+      quiet = TRUE
+    ),
+    end_utc = ymd_hms(
+      activity_body$effective_time_frame.time_interval.end_date_time,
+      tz = "UTC",
+      quiet = TRUE
+    ),
+    steps = suppressWarnings(
+      as.numeric(activity_body$base_movement_quantity.value)
+    )
+  ) |>
+    filter(
+      !is.na(start_utc),
+      !is.na(end_utc),
+      !is.na(steps),
+      steps >= 0
+    ) |>
+    mutate(
+      date = as.Date(
+        map2_chr(start_utc, timezone, local_date_character)
+      ),
+      observed_minutes = pmax(
+        0,
+        as.numeric(difftime(end_utc, start_utc, units = "mins"))
+      )
+    )
+}
+
+read_calorie_file <- function(person_id, relative_path) {
+  calorie_json <- fromJSON(
+    resolve_data_path(relative_path),
+    flatten = TRUE
+  )
+
+  calorie_body <- calorie_json$body$activity
+  timezone_label <- tolower(as.character(calorie_json$header$timezone)[1])
+  iana_timezone <- lookup_timezone(timezone_label)
+
+  if (is.na(iana_timezone)) {
+    stop("Unrecognized calorie timezone label for participant ", person_id)
+  }
+
+  tibble(
+    person_id = as.character(person_id),
+    timezone = iana_timezone,
+    time_utc = ymd_hms(
+      calorie_body$effective_time_frame.date_time,
+      tz = "UTC",
+      quiet = TRUE
+    ),
+    active_calories = suppressWarnings(
+      as.numeric(calorie_body$calories_value.value)
+    )
+  ) |>
+    filter(
+      !is.na(time_utc),
+      !is.na(active_calories),
+      active_calories >= 0
+    ) |>
+    mutate(
+      date = as.Date(
+        map2_chr(time_utc, timezone, local_date_character)
+      )
+    )
+}
+
+read_heart_rate_file <- function(person_id, relative_path) {
+  heart_rate_json <- fromJSON(
+    resolve_data_path(relative_path),
+    flatten = TRUE
+  )
+
+  heart_rate_body <- heart_rate_json$body$heart_rate
+  timezone_label <- tolower(
+    as.character(heart_rate_json$header$timezone)[1]
+  )
+  iana_timezone <- lookup_timezone(timezone_label)
+
+  if (is.na(iana_timezone)) {
+    stop("Unrecognized heart-rate timezone label for participant ", person_id)
+  }
+
+  tibble(
+    person_id = as.character(person_id),
+    timezone = iana_timezone,
+    time_utc = ymd_hms(
+      heart_rate_body$effective_time_frame.date_time,
+      tz = "UTC",
+      quiet = TRUE
+    ),
+    heart_rate_bpm = suppressWarnings(
+      as.numeric(heart_rate_body$heart_rate.value)
+    )
+  ) |>
+    filter(
+      !is.na(time_utc),
+      !is.na(heart_rate_bpm),
+      heart_rate_bpm > 0
+    ) |>
+    mutate(
+      date = as.Date(
+        map2_chr(time_utc, timezone, local_date_character)
+      )
+    )
+}
+
+use_saved_activity_table <-
+  file.exists(activity_output_path)
+
+if (use_saved_activity_table) {
+  step_records <- NULL
+  calorie_records <- NULL
+  heart_rate_records <- NULL
+} else {
+  step_records <- map2_dfr(
+    wearable_manifest$person_id,
+    wearable_manifest$physical_activity_filepath,
+    read_step_file
+  )
+
+  calorie_records <- map2_dfr(
+    wearable_manifest$person_id,
+    wearable_manifest$active_calories_filepath,
+    read_calorie_file
+  )
+
+  heart_rate_records <- map2_dfr(
+    wearable_manifest$person_id,
+    wearable_manifest$heartrate_filepath,
+    read_heart_rate_file
+  )
+}
+```
+
+## Aggregate to one row per person-day
+
+Step values describe short intervals and are summed. The calorie stream contains repeated cumulative values, including interleaved snapshots, so the daily active-calorie feature is the maximum recorded value within each local day rather than the sum of all snapshots.
+
+```{r}
+if (use_saved_activity_table) {
+  daily_activity <- read_csv(
+    activity_output_path,
+    show_col_types = FALSE
+  ) |>
+    mutate(
+      person_id = as.character(person_id),
+      date = as.Date(date),
+      study_group_label = factor(
+        study_group_label,
+        levels = unname(study_group_labels)
+      ),
+      valid_activity_day =
+        step_observation_hours >= minimum_activity_observation_hours &
+        coalesce(number_of_heart_rate_records, 0) > 0 &
+        coalesce(total_steps, 0) > 0
+    )
+} else {
+  daily_steps <- step_records |>
+    group_by(person_id, date) |>
+    summarise(
+      total_steps = sum(steps, na.rm = TRUE),
+      step_observation_hours =
+        sum(observed_minutes, na.rm = TRUE) / 60,
+      number_of_step_records = n(),
+      .groups = "drop"
+    )
+
+  daily_calories <- calorie_records |>
+    group_by(person_id, date) |>
+    summarise(
+      active_calories = max(active_calories, na.rm = TRUE),
+      number_of_calorie_records = n(),
+      .groups = "drop"
+    )
+
+  daily_heart_rate <- heart_rate_records |>
+    group_by(person_id, date) |>
+    summarise(
+      average_heart_rate_bpm = mean(heart_rate_bpm, na.rm = TRUE),
+      number_of_heart_rate_records = n(),
+      .groups = "drop"
+    )
+
+  daily_activity <- full_join(
+    daily_steps,
+    daily_calories,
+    by = c("person_id", "date")
+  ) |>
+    full_join(
+      daily_heart_rate,
+      by = c("person_id", "date")
+    ) |>
+    mutate(
+      valid_activity_day =
+        step_observation_hours >= minimum_activity_observation_hours &
+        coalesce(number_of_heart_rate_records, 0) > 0 &
+        coalesce(total_steps, 0) > 0
+    ) |>
+    left_join(
+      participants |>
+        select(
+          person_id,
+          clinical_site,
+          study_group,
+          study_group_label
+        ),
+      by = "person_id"
+    ) |>
+    arrange(person_id, date) |>
+    select(
+      person_id,
+      date,
+      total_steps,
+      active_calories,
+      average_heart_rate_bpm,
+      step_observation_hours,
+      valid_activity_day,
+      number_of_step_records,
+      number_of_calorie_records,
+      number_of_heart_rate_records,
+      clinical_site,
+      study_group,
+      study_group_label
+    )
+}
+
+write_csv(daily_activity, activity_output_path, na = "")
+```
+
+## Activity-table quality checks
+
+```{r}
+activity_key_duplicates <- daily_activity |>
+  count(person_id, date) |>
+  filter(n > 1) |>
+  nrow()
+
+tibble(
+  check = c(
+    "Daily activity rows",
+    "Participants with activity rows",
+    "Complete activity days",
+    "Incomplete/partial activity days",
+    "Duplicate person-day keys",
+    "Zero-step days flagged incomplete"
+  ),
+  result = c(
+    nrow(daily_activity),
+    n_distinct(daily_activity$person_id),
+    sum(daily_activity$valid_activity_day, na.rm = TRUE),
+    sum(!daily_activity$valid_activity_day, na.rm = TRUE),
+    activity_key_duplicates,
+    sum(
+      coalesce(daily_activity$total_steps, 0) == 0 &
+        !daily_activity$valid_activity_day
+    )
+  )
+) |>
+  kable(
+    col.names = c("Quality-control check", "Result"),
+    caption = "Daily activity processing checks"
+  )
+```
+
+```{r}
+daily_activity |>
+  select(
+    person_id,
+    date,
+    total_steps,
+    active_calories,
+    average_heart_rate_bpm,
+    step_observation_hours,
+    valid_activity_day
+  ) |>
+  slice_head(n = 12) |>
+  mutate(
+    across(
+      where(is.numeric),
+      ~ round(.x, 1)
+    )
+  ) |>
+  kable(
+    col.names = c(
+      "Participant",
+      "Date",
+      "Steps",
+      "Active calories",
+      "Average HR (bpm)",
+      "Observed hours",
+      "Complete day"
+    ),
+    caption = "First 12 rows of the daily activity table"
+  )
+```
+
+The complete table contains `r nrow(daily_activity)` person-days from `r n_distinct(daily_activity$person_id)` participants and is saved as `practice/derived/week3_daily_activity.csv`. Partial and non-wear days are retained and flagged; plots and later comparisons can restrict to complete days.
+
+# Required plots
+
+## Select example participants
+
+```{r}
+selection_candidates <- person_night_sleep |>
+  filter(person_id %in% cgm_manifest$person_id) |>
+  count(
+    person_id,
+    study_group,
+    study_group_label,
+    name = "number_of_sleep_nights"
+  ) |>
+  inner_join(
+    daily_activity |>
+      filter(valid_activity_day) |>
+      count(person_id, name = "number_of_activity_days"),
+    by = "person_id"
+  )
+
+selected_participants <- selection_candidates |>
+  arrange(
+    study_group,
+    desc(number_of_sleep_nights),
+    desc(number_of_activity_days),
+    person_id
+  ) |>
+  group_by(study_group) |>
+  slice_head(n = 1) |>
+  ungroup()
+
+selected_ids <- selected_participants$person_id
+
+selected_participants |>
+  select(
+    person_id,
+    study_group_label,
+    number_of_sleep_nights,
+    number_of_activity_days
+  ) |>
+  kable(
+    col.names = c(
+      "Selected participant",
+      "Study group",
+      "Sleep nights",
+      "Complete activity days"
+    ),
+    caption = "Deterministic example-participant selection"
+  )
+```
+
+One participant per study group is selected by the greatest number of retained sleep nights, then complete activity days, then participant ID. This rule is disclosed to avoid choosing examples only because their plots look interesting.
+
+## Sleep duration
+
+```{r}
+#| warning: false
+#| fig-height: 10
+#| fig-width: 10
+prepared_data <- person_night_sleep |>
+  filter(person_id %in% selected_ids) |>
+  group_by(person_id) |>
+  arrange(sleep_night, .by_group = TRUE) |>
+  mutate(
+    monitoring_episode = cumsum(
+      is.na(lag(sleep_night)) |
+        as.numeric(sleep_night - lag(sleep_night)) > 14
+    )
+  ) |>
+  ungroup() |>
+  mutate(person_label = paste("Participant", person_id))
+y_min <- min(prepared_data$total_sleep_time_minutes / 60, na.rm = TRUE)
+y_max <- max(prepared_data$total_sleep_time_minutes / 60, na.rm = TRUE)
+build_participant_plot <- function(df, label) {
+  df |>
+    filter(person_label == label) |>
+    ggplot(
+      aes(
+        x = sleep_night,
+        y = total_sleep_time_minutes / 60,
+        group = interaction(person_id, monitoring_episode)
+      )
+    ) +
+    annotate(
+      "rect",
+      xmin = -Inf, xmax = Inf,
+      ymin = 7, ymax = 9,
+      fill = "#DDEAF7", alpha = 0.55
+    ) +
+    geom_line(color = "#2C6E9B", linewidth = 0.7) +
+    geom_point(color = "#2C6E9B", size = 2) +
+    scale_x_date(
+      breaks = breaks_pretty(n = 4),
+      date_labels = "%b %d"
+    ) +
+    scale_y_continuous(limits = c(y_min, y_max)) + 
+    labs(
+      title = label, 
+      x = NULL,      
+      y = NULL
+    ) +
+    theme(axis.text.x = element_text(angle = 30, hjust = 1))
+}
+participant_labels <- unique(prepared_data$person_label)
+plots <- map(participant_labels, ~ build_participant_plot(prepared_data, .x))
+final_composite <- (plots[[1]] | plots[[2]]) / plots[[3]] / plots[[4]]
+final_composite + 
+  plot_annotation(
+    title = "Nightly total sleep time for selected participants",
+    subtitle = "Blue band marks 7--9 hours for context"
+  ) & 
+  theme(plot.title = element_text(size = 10))
+```
+
+## Sleep timing
+
+```{r}
+#| fig-width: 10
+#| fig-height: 7
+
+sleep_timing_plot_data <- person_night_sleep |>
+  filter(person_id %in% selected_ids) |>
+  mutate(
+    bedtime_clock = map2_dbl(
+      bedtime_utc,
+      timezone,
+      local_clock_hour
+    ),
+    wake_clock = map2_dbl(
+      wake_time_utc,
+      timezone,
+      local_clock_hour
+    ),
+    bedtime_plot = if_else(
+      bedtime_clock < 12,
+      bedtime_clock + 24,
+      bedtime_clock
+    ),
+    wake_plot = if_else(
+      wake_clock <= bedtime_plot,
+      wake_clock + 24,
+      wake_clock
+    ),
+    person_label = paste("Participant", person_id)
+  )
+
+timing_breaks <- seq(
+  3 * floor(min(sleep_timing_plot_data$bedtime_plot) / 3),
+  3 * ceiling(max(sleep_timing_plot_data$wake_plot) / 3),
+  by = 3
+)
+
+sleep_timing_plot_data |>
+  ggplot() +
+  geom_segment(
+    aes(
+      x = bedtime_plot,
+      xend = wake_plot,
+      y = sleep_night,
+      yend = sleep_night
+    ),
+    color = "#2C6E9B",
+    linewidth = 1,
+    alpha = 0.8,
+    lineend = "round"
+  ) +
+  facet_wrap(~ person_label, scales = "free_y", ncol = 2) +
+  scale_x_continuous(
+    breaks = timing_breaks,
+    labels = function(x) sprintf("%02d:00", as.integer(x %% 24))
+  ) +
+  scale_y_date(
+    breaks = breaks_pretty(n = 6),
+    date_labels = "%b %d"
+  ) +
+  labs(
+    title = "Bedtime-to-wake intervals for selected participants",
+    subtitle = "Each horizontal segment is one retained main-sleep episode in local clock time.",
+    x = "Local clock time",
+    y = "Wake-up date"
+  )
+```
+
+## Daily steps
+
+```{r}
+#| fig-width: 10
+#| fig-height: 7
+
+daily_activity |>
+  filter(
+    person_id %in% selected_ids,
+    valid_activity_day
+  ) |>
+  mutate(person_label = paste("Participant", person_id)) |>
+  ggplot(aes(x = date, y = total_steps)) +
+  geom_col(fill = "#D28E2C", width = 0.8) +
+  facet_wrap(~ person_label, scales = "free_x", ncol = 2) +
+  scale_x_date(
+    breaks = breaks_pretty(n = 4),
+    date_labels = "%b %d"
+  ) +
+  scale_y_continuous(labels = label_comma()) +
+  labs(
+    title = "Daily steps for selected participants",
+    subtitle = "Complete days require 20+ observed hours, positive heart-rate evidence, and nonzero steps.",
+    x = "Local date",
+    y = "Total steps"
+  ) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+## CGM during sleep
+
+```{r}
+read_cgm_file <- function(person_id, relative_path) {
+  cgm_json <- fromJSON(
+    resolve_data_path(relative_path),
+    flatten = TRUE
+  )
+
+  cgm_body <- cgm_json$body$cgm
+
+  tibble(
+    person_id = as.character(person_id),
+    time_utc = ymd_hms(
+      cgm_body$effective_time_frame.time_interval.start_date_time,
+      tz = "UTC",
+      quiet = TRUE
+    ),
+    event_type = as.character(cgm_body$event_type),
+    glucose_original = as.character(cgm_body$blood_glucose.value),
+    glucose_mg_dl = suppressWarnings(
+      as.numeric(glucose_original)
+    ),
+    glucose_unit = as.character(cgm_body$blood_glucose.unit)
+  ) |>
+    filter(
+      event_type == "EGV",
+      !is.na(time_utc),
+      !is.na(glucose_mg_dl),
+      glucose_unit == "mg/dL",
+      between(glucose_mg_dl, 40, 400)
+    ) |>
+    group_by(person_id, time_utc) |>
+    filter(n_distinct(glucose_mg_dl) == 1) |>
+    slice_head(n = 1) |>
+    ungroup()
+}
+
+selected_cgm_manifest <- cgm_manifest |>
+  filter(person_id %in% selected_ids)
+
+selected_cgm <- map2_dfr(
+  selected_cgm_manifest$person_id,
+  selected_cgm_manifest$glucose_filepath,
+  read_cgm_file
+)
+
+representative_nights <- person_night_sleep |>
+  filter(person_id %in% selected_ids) |>
+  group_by(person_id) |>
+  mutate(
+    distance_from_person_median = abs(
+      total_sleep_time_minutes -
+        median(total_sleep_time_minutes, na.rm = TRUE)
+    )
+  ) |>
+  arrange(distance_from_person_median, sleep_night) |>
+  slice_head(n = 1) |>
+  ungroup() |>
+  select(
+    person_id,
+    sleep_night,
+    bedtime_utc,
+    wake_time_utc,
+    total_sleep_time_minutes
+  )
+
+extract_sleep_cgm <- function(
+    person_id,
+    sleep_night,
+    bedtime_utc,
+    wake_time_utc,
+    total_sleep_time_minutes) {
+  selected_cgm |>
+    filter(
+      .data$person_id == person_id,
+      time_utc >= bedtime_utc,
+      time_utc <= wake_time_utc
+    ) |>
+    mutate(
+      sleep_night = sleep_night,
+      hours_since_bedtime = as.numeric(
+        difftime(time_utc, bedtime_utc, units = "hours")
+      ),
+      facet_label = paste0(
+        "Participant ",
+        person_id,
+        " — ",
+        sleep_night
+      )
+    )
+}
+
+cgm_during_sleep <- pmap_dfr(
+  representative_nights,
+  extract_sleep_cgm
+)
+```
+
+```{r}
+#| fig-width: 10
+#| fig-height: 7
+
+cgm_during_sleep |>
+  ggplot(
+    aes(
+      x = hours_since_bedtime,
+      y = glucose_mg_dl
+    )
+  ) +
+  annotate(
+    "rect",
+    xmin = -Inf,
+    xmax = Inf,
+    ymin = 70,
+    ymax = 180,
+    fill = "#E9EEF3",
+    alpha = 0.65
+  ) +
+  geom_line(color = "#8A3F69", linewidth = 0.8) +
+  facet_wrap(~ facet_label, scales = "free_x", ncol = 2) +
+  labs(
+    title = "CGM during one representative sleep night per selected participant",
+    subtitle = "The representative night is closest to that participant's median total sleep time; grey band is 70--180 mg/dL.",
+    x = "Hours since bedtime",
+    y = "Glucose (mg/dL)"
+  )
+```
