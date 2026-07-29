@@ -19,31 +19,29 @@ execute:
 
 # Sleep Data in AI-Readi
 
-AI-READI used the Garmin vívosmart 5.
+All data recorded on Garmin vívosmart 5.
 
-  - Participants were asked to wear it for 10 consecutive days.
+  - Participants wore it for 10 consecutive days.
  
-  - They were advised to use the non-dominant wrist, but could choose either wrist.
+  - Participants were advised to use the non-dominant wrist, but could choose either wrist.
   
   - The actual wrist and dominant hand were recorded when the device was returned.
   
-  - It was worn concurrently with the Dexcom CGM and the home environmental sensor.
+  - It was worn with the Dexcom CGM and the home environmental sensor.
   
-  - The battery required charging every 2–3 days, so charging may cause gaps.
+  - The battery needed charging every 2–3 days, so there may be gaps in coverage.
   
-  - Before distribution, staff recorded the device serial number and distribution date. At return, they recorded the return date, worn wrist, and dominant hand.
+  - Before use, the device serial number and distribution date were recorded. At return, the date, worn wrist, and dominant hand were recorded.
   
   - Garmin data were extracted from proprietary .FIT files and converted into Open mHealth JSON.
   
-  - The tracker’s general sampling frequency is documented as 5 seconds, but the released sleep data are consolidated stage intervals—not 5-second observations.
+  - The tracker’s general sampling frequency is documented as 5 seconds, but sleep data are consolidated stage intervals.
   
-  - The watch automatically detects sleep and movement during the user’s configured normal sleep hours. Garmin Connect permits normal sleep hours to be configured, but AI-READI does not provide those participant-specific settings in the released files.
+  - The watch automatically detects sleep and movement during the configured normal sleep hours. Garmin Connect permits normal sleep hours to be configured, but this data is not provided.
 
 Note:
 
 > **A sleep night is labeled by its wake-up date.**
-
-For example, sleep beginning Monday night and ending Tuesday morning is labeled Tuesday.
 
 # Preparation
 
@@ -150,8 +148,6 @@ activity_output_path <- file.path(
   "week3_daily_activity.csv"
 )
 ```
-
-The rules:
 
 - Sleep-stage segments separated by more than 90 minutes start a new sleep episode.
 - A candidate main-sleep episode must span 4--14 hours.
