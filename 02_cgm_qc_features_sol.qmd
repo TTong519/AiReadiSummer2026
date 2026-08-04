@@ -1,0 +1,2429 @@
+---
+title: "Week 2: CGM Processing and Individual Glucose Patterns"
+subtitle: "Solutions for Data Analysis Tasks"
+author: "Joleen and Kerry"
+date: today
+format:
+  html:
+    theme: cosmo
+    embed-resources: true
+    number-sections: true
+    toc: true
+    toc-depth: 4
+    toc-location: left
+    code-fold: false
+engine: knitr
+---
+
+# Preparation
+
+## Project Structure
+
+This solution file assumes the following project structure, based on the suggested GitHub repository structure provided in the internship planner:
+
+``` text
+summer-internship-2026/
+├── README.md
+├── summer-internship-2026.Rproj
+├── data/
+│   ├── raw/
+│   │   ├── v3-mini/
+│   │   │   └── dataset/
+│   │   │       ├── participants.tsv
+│   │   │       ├── clinical_data/
+│   │   │       │   └── measurement.csv
+│   │   │       └── wearable_blood_glucose/
+│   │   │           └── continuous_glucose_monitoring/
+│   │   │               └── dexcom_g6/
+│   │   │                   ├── 1029/
+│   │   │                   │   └── 1029_DEX.json
+│   │   │                   └── ...
+│   │   └── v3/
+│   │       └── dataset/
+│   │           └── ...
+│   └── processed/
+├── code/
+├── notebooks/
+├── figures/
+├── tables/
+├── slides/
+└── manuscript_notes/
+```
+
+**Do not upload private, sensitive, or restricted data to GitHub. Additionally, organize your work into the respective folders of your repo.**
+
+## Start a Clean R Session and Load Packages
+
+The following chunk removes objects left in the current global environment and loads the packages required for the analysis.
+
+```{r}
+#| message: false
+#| warning: false
+
+rm(list = ls())
+
+library(tidyverse)
+library(here)
+library(knitr)
+library(kableExtra)
+library(janitor)
+library(jsonlite)
+
+# Anchor the project root to this notebook's location, so here() resolves
+# against summer-internship-2026 regardless of which RStudio project the
+# session was started from.
+
+# here::i_am("02_cgm_qc_features_sol.qmd")
+
+options(
+  dplyr.summarise.inform = FALSE,
+  scipen = 999
+)
+
+theme_set(theme_minimal())
+```
+
+`lubridate` and `purrr` are attached as part of `tidyverse` and are not loaded separately.
+
+## Select the Dataset Version
+
+The analysis uses the dataset selected below. To rerun the analysis on another dataset version, change only `dataset_version`.
+
+```{r}
+
+dataset_version <- "v3-mini"
+
+dataset_label <- case_when(
+  dataset_version == "v3-mini" ~ "AI-READI v3 mini dataset",
+  dataset_version == "v3" ~ "AI-READI v3 full dataset",
+  TRUE ~ dataset_version
+)
+
+data_dir <- "/Users/tt/Library/CloudStorage/Box-Box/ai-readi/v3-mini/dataset"
+
+data_dir
+```
+
+The analysis uses the `r dataset_label`.
+
+## Set the Analysis Parameters
+
+The following chunk defines every threshold used in this notebook in one place, so that a reader can see the processing rules without searching the code.
+
+```{r}
+
+# A Dexcom G6 sensor writes one reading every five minutes, so a complete
+# local day contains 288 readings. The consensus paper recommends at least
+# 70 percent active data, and 0.70 * 288 = 201.6, which rounds up to 202.
+
+expected_readings_per_day <- 288
+
+min_readings_valid_day <- 202
+
+# Data-processing rule for this exercise only. This is not a clinical
+# definition of possible glucose.
+
+glucose_lower_bound <- 40
+
+glucose_upper_bound <- 400
+
+# Daytime is 6:00 AM through 11:59 PM local time and nighttime is
+# 12:00 AM through 5:59 AM local time. These are clock-time periods,
+# not measured sleep and waking periods.
+
+daytime_start_hour <- 6
+```
+
+# Read Data
+
+This section reads the participant file and locates the Dexcom files required for the Week 2 analysis.
+
+## Participant Data
+
+```{r}
+
+# This file contains one row per participant and includes study group and
+# clinical site. Clinical site is used later to cross-check the timezone
+# label recorded in each Dexcom file.
+
+participants <- read_tsv(
+  file.path(
+    data_dir,
+    "participants.tsv"
+  ),
+  show_col_types = FALSE
+) |>
+  clean_names()
+```
+
+## CGM Cohort and File Locations
+
+Rather than trusting a manifest path column, each participant's Dexcom folder is located directly on disk and the JSON file inside it is found by pattern. Matching on `\\.json$` rather than on a hard-coded `<person_id>_DEX.json` name means the code still works if a dataset version changes the file-naming convention.
+
+```{r}
+
+dexcom_dir <- file.path(
+  data_dir,
+  "wearable_blood_glucose",
+  "continuous_glucose_monitoring",
+  "dexcom_g6"
+)
+
+cgm_cohort <- participants |>
+  filter(wearable_blood_glucose) |>
+  pull(person_id)
+
+participant_dirs <- list.dirs(
+  dexcom_dir,
+  recursive = FALSE,
+  full.names = TRUE
+)
+
+cohort_files <- tibble(
+  dir_path = participant_dirs
+) |>
+  mutate(
+    folder_name = basename(dir_path),
+    person_id = suppressWarnings(
+      as.numeric(
+        str_remove(folder_name, "AIREADI-")
+      )
+    ),
+    json_path = map_chr(
+      dir_path,
+      function(one_dir) {
+        found <- list.files(
+          one_dir,
+          pattern = "\\.json$",
+          full.names = TRUE
+        )
+        if (length(found) >= 1) found[1] else NA_character_
+      }
+    )
+  ) |>
+  filter(
+    person_id %in% cgm_cohort,
+    !is.na(json_path)
+  )
+```
+
+## Participant Site Lookup
+
+The cleaning function needs each participant's clinical site. It is extracted once here so that the function reads one small lookup table instead of the full participant file.
+
+```{r}
+
+participant_sites <- participants |>
+  select(
+    person_id,
+    clinical_site
+  )
+```
+
+## Timezone and Clinical-Site Reference Tables
+
+IANA zone names such as `America/Los_Angeles` carry the real daylight-saving rules for a region, so R applies daylight-saving time automatically once the correct zone is known. A bare label such as `pst` cannot do this on its own. This explanation follows Shubho's submission.
+
+Comparing `expected_region` (derived from the timezone label in the JSON header) against `site_region` (derived from the participant's clinical site), let us check whether the device timezone is consistent with where the participant was enrolled. Both reference tables below, and the cross-check itself, are adapted from Eric's work.
+
+```{r}
+
+# tz_map and site_region_map adapted from Eric's submission.
+
+tz_map <- tribble(
+  ~timezone_label_json, ~iana_zone,           ~expected_region,
+  "pst",                "America/Los_Angeles", "Pacific",
+  "pdt",                "America/Los_Angeles", "Pacific",
+  "mst",                "America/Denver",      "Mountain",
+  "mdt",                "America/Denver",      "Mountain",
+  "cst",                "America/Chicago",     "Central",
+  "cdt",                "America/Chicago",     "Central",
+  "est",                "America/New_York",    "Eastern",
+  "edt",                "America/New_York",    "Eastern"
+)
+
+site_region_map <- tribble(
+  ~clinical_site, ~site_region,
+  "UW",           "Pacific",
+  "UCSD",         "Pacific",
+  "UAB",          "Central"
+)
+```
+
+## Define Values for File Validation
+
+The following chunk calculates values used in the written data-validation results. If this were a final analysis report, this setup code could be hidden, but it is shown here for instructional purposes. Using inline R code ensures that the reported counts update automatically, even when the dataset version changes. *This is good for reproducibility.*
+
+```{r}
+#| echo: true
+#| results: hide
+
+n_participant_rows <- nrow(participants)
+
+n_cgm_cohort <- n_distinct(
+  cgm_cohort,
+  na.rm = TRUE
+)
+
+n_cohort_files_found <- nrow(cohort_files)
+
+n_cohort_files_missing <- n_cgm_cohort - n_cohort_files_found
+```
+
+# Inspect and Validate Data
+
+This section checks the structure and basic integrity of the participant file and the Dexcom folders before any CGM processing.
+
+## Participant Data
+
+```{r}
+
+# Inspect variable names, data types, and example values.
+
+glimpse(participants)
+
+# Note: Do not print complete participant-level rows in a rendered file
+# that may be committed to GitHub. Use aggregate summaries instead.
+```
+
+```{r}
+
+# Confirm that the participant file contains one row per participant.
+
+participants |>
+  summarise(
+    number_of_rows = n(),
+    number_of_unique_participants = n_distinct(
+      person_id,
+      na.rm = TRUE
+    ),
+    number_of_missing_ids = sum(is.na(person_id)),
+    number_of_duplicate_ids = sum(duplicated(person_id))
+  )
+```
+
+The participant file contained `r n_participant_rows` rows, of which `r n_cgm_cohort` were flagged as having CGM data available.
+
+## CGM Folder Coverage
+
+```{r}
+
+# Confirm that every CGM-eligible participant has a readable Dexcom file.
+
+tibble(
+  check = c(
+    "Participants flagged wearable_blood_glucose == TRUE",
+    "Participants with a readable Dexcom JSON file",
+    "Participants missing a Dexcom JSON file"
+  ),
+  number_of_participants = c(
+    n_cgm_cohort,
+    n_cohort_files_found,
+    n_cohort_files_missing
+  )
+) |>
+  kable(
+    col.names = c(
+      "Check",
+      "Number of participants"
+    )
+  )
+```
+
+`r n_cohort_files_found` of the `r n_cgm_cohort` CGM-eligible participants had a readable Dexcom JSON file. `r n_cohort_files_missing` participant(s) were missing a file and are excluded from processing below.
+
+## Inspect One Raw Dexcom File
+
+Before writing the cleaning function, we inspect the structure of a single file. Reading the file with `flatten = TRUE` collapses the nested JSON fields into dot-named columns and returns `body$cgm` as a data frame, which is both *much faster and much simpler* than walking the nested list one reading at a time. This parsing approach is taken from Shubho's work. *If this step was taking longer, it might be because your approach was walking the list one reading at a time.*
+
+```{r}
+
+example_raw <- fromJSON(
+  cohort_files$json_path[1],
+  flatten = TRUE
+)
+
+# The header carries the participant ID and the device timezone label.
+
+str(
+  example_raw$header,
+  max.level = 1
+)
+```
+
+```{r}
+
+# The body carries one row per CGM event.
+
+example_raw$body$cgm |>
+  as_tibble() |>
+  glimpse()
+```
+
+Two features of the raw data drive several decisions below. First, the timestamps end in `Z`, which marks them as UTC (Coordinated Universal Time). Second, `blood_glucose.value` is not always numeric. Dexcom writes the sentinel strings `"Low"` and `"High"` when a reading falls outside the sensor's reportable range, which makes the column character in some files and integer in others. Both the original and the numeric value are therefore retained.
+
+# Clean the CGM Data for One Participant
+
+This week's work assigned 12 steps for cleaning. This section works through all twelve on a single participant, one step at a time, so that each rule and its result can be seen separately. The next section collects the same twelve steps into a function and applies them to every participant.
+
+## Select the Development Participant
+
+```{r}
+
+# Use the first participant in the CGM cohort to develop the code.
+
+dev_path <- cohort_files$json_path[1]
+
+dev_raw <- fromJSON(
+  dev_path,
+  flatten = TRUE
+)
+
+dev_person_id <- as.numeric(
+  str_remove(dev_raw$header$patient_id, "AIREADI-")
+)
+
+dev_tz_label <- str_to_lower(dev_raw$header$timezone)
+
+dev_person_id
+
+dev_tz_label
+```
+
+The code is developed on participant `r dev_person_id`. The Dexcom header records the timezone label `r dev_tz_label`.
+
+## Step 1: Keep Only Estimated Glucose Value Events
+
+```{r}
+
+# Read the CGM event table and keep the variables required for Week 2.
+
+dev_all_events <- as_tibble(dev_raw$body$cgm)
+
+dev_egv <- dev_all_events |>
+  filter(event_type == "EGV") |>
+  transmute(
+    person_id = dev_person_id,
+    event_type,
+    timezone_label_json = dev_tz_label,
+    time_utc_text = effective_time_frame.time_interval.start_date_time,
+    glucose_value_original = as.character(blood_glucose.value),
+    glucose_value_numeric = suppressWarnings(
+      as.numeric(glucose_value_original)
+    ),
+    glucose_unit = blood_glucose.unit
+  )
+
+nrow(dev_all_events)
+
+nrow(dev_egv)
+```
+
+The file contained `r nrow(dev_all_events)` events, of which `r nrow(dev_egv)` were estimated glucose value events. Events that are not `EGV`, such as calibrations and alerts, are removed here.
+
+The glucose value is stored twice. Recall that Dexcom writes the words `"Low"` and `"High"` when a reading falls outside the range the sensor can report, so this field is text in some files and a number in others. `glucose_value_original` keeps exactly what the file said. `glucose_value_numeric` converts it to a number, which turns `"Low"` and `"High"` into missing values. *Converting to text first with `as.character()` is what allows files of both kinds to be combined later.*
+
+## Step 2: Parse Timestamps as UTC
+
+```{r}
+
+# The timestamps end in "Z", which marks them as UTC.
+
+dev_egv <- dev_egv |>
+  mutate(
+    time_utc = ymd_hms(
+      time_utc_text,
+      tz = "UTC",
+      quiet = TRUE
+    )
+  )
+
+dev_egv |>
+  select(
+    time_utc_text,
+    time_utc
+  ) |>
+  slice_head(n = 3) |>
+  kable()
+```
+
+The text timestamps are now real date-time values in UTC. Storing them in UTC first means every participant operates on one common clock, regardless of their local timezone.
+
+## Step 3: Infer the Timezone and Check It Against the Clinical Site
+
+```{r}
+
+# Look up the IANA timezone for the label recorded in the JSON header.
+
+dev_tz_match <- tz_map |>
+  filter(timezone_label_json == dev_tz_label)
+
+dev_iana_zone <- dev_tz_match$iana_zone
+
+dev_expected_region <- dev_tz_match$expected_region
+
+# Look up the region implied by the participant's clinical site.
+
+dev_site <- participant_sites |>
+  filter(person_id == dev_person_id) |>
+  pull(clinical_site)
+
+dev_site_region <- site_region_map |>
+  filter(clinical_site == dev_site) |>
+  pull(site_region)
+```
+
+```{r}
+
+# Compare the two regions and flag the participant if they disagree.
+
+dev_tz_qc <- tibble(
+  person_id = dev_person_id,
+  timezone_label_json = dev_tz_label,
+  iana_zone = dev_iana_zone,
+  clinical_site = dev_site,
+  expected_region = dev_expected_region,
+  site_region = dev_site_region,
+  tz_site_consistent = dev_expected_region == dev_site_region
+) |>
+  mutate(
+    tz_flag_for_review = is.na(iana_zone) | !tz_site_consistent
+  )
+
+dev_tz_qc |>
+  kable()
+```
+
+The device label `r dev_tz_label` implies the `r dev_expected_region` region, and clinical site `r dev_site` is in the `r dev_site_region` region. The two agree, so participant `r dev_person_id` is not flagged for review.
+
+When the two disagree, the participant is flagged and left alone rather than corrected. The correct answer depends on whether the participant travelled or the device was set up incorrectly, and the code cannot tell which.
+
+## Step 4: Create the Local Time Variables
+
+```{r}
+
+# Convert UTC to local time and derive the local calendar variables.
+
+dev_egv <- dev_egv |>
+  mutate(
+    time_local = with_tz(time_utc, tzone = dev_iana_zone),
+    date_local = as_date(time_local),
+    hour_local = hour(time_local),
+    timezone_abbreviation = format(time_local, "%Z"),
+    is_dst = dst(time_local)
+  )
+
+dev_egv |>
+  select(
+    time_utc,
+    time_local,
+    date_local,
+    hour_local,
+    timezone_abbreviation,
+    is_dst
+  ) |>
+  slice_head(n = 3) |>
+  kable()
+```
+
+`with_tz()` changes how the time is displayed without changing the moment it refers to. Because the IANA zone carries the daylight-saving rules for the region, R decides on its own whether each reading is `r unique(dev_egv$timezone_abbreviation)[1]` or the other abbreviation for that zone.
+
+`timezone_abbreviation` is taken from each reading rather than copied from the file header. This is what allows a participant recorded across a daylight-saving change to show both abbreviations, which Step 12 relies on.
+
+## Step 5: Document the Timezone Decision
+
+As the work plan asks, it is good to have the timezone decision stated as a comment, so that a reader does not have to work it out from the lookup tables.
+
+```{r}
+
+# The JSON header says "pst" and the clinical site is UW.
+# We interpret this as US Pacific Time and use
+# "America/Los_Angeles" for its timezone and daylight-saving rules.
+# R determines whether each timestamp is PST or PDT.
+```
+
+The same comment appears inside the cleaning function below, which is where the conversion happens.
+
+## Step 6: Check for Missing Timestamps and Glucose Values
+
+```{r}
+
+# Count readings with no timestamp and readings with no numeric glucose.
+
+dev_missing <- tibble(
+  check = c(
+    "Readings with a missing timestamp",
+    "Readings with a missing numeric glucose value"
+  ),
+  number_of_readings = c(
+    sum(is.na(dev_egv$time_utc)),
+    sum(is.na(dev_egv$glucose_value_numeric))
+  )
+)
+
+dev_missing |>
+  kable(
+    col.names = c(
+      "Check",
+      "Number of readings"
+    )
+  )
+```
+
+Participant `r dev_person_id` had `r sum(is.na(dev_egv$time_utc))` readings with a missing timestamp and `r sum(is.na(dev_egv$glucose_value_numeric))` readings with a missing numeric glucose value. A missing numeric glucose value here means the file recorded `"Low"` or `"High"` instead of a number.
+
+## Step 7: Handle Duplicate Timestamps
+
+A duplicate is the same participant ID and the same UTC timestamp.
+
+```{r}
+
+# Count duplicate groups and check whether their glucose values agree.
+
+dev_duplicate_groups <- dev_egv |>
+  filter(!is.na(time_utc)) |>
+  group_by(person_id, time_utc) |>
+  summarise(
+    number_of_rows = n(),
+    number_of_distinct_values = n_distinct(glucose_value_numeric),
+    .groups = "drop"
+  ) |>
+  filter(number_of_rows > 1)
+
+nrow(dev_duplicate_groups)
+```
+
+```{r}
+
+# Duplicates whose glucose values disagree are removed completely.
+# Duplicates whose glucose values agree are reduced to one copy.
+#
+# This rule is Shubho.
+
+dev_conflicting_keys <- dev_duplicate_groups |>
+  filter(number_of_distinct_values > 1) |>
+  select(
+    person_id,
+    time_utc
+  )
+
+dev_timed <- dev_egv |>
+  filter(!is.na(time_utc))
+
+dev_dedup <- dev_timed |>
+  anti_join(
+    dev_conflicting_keys,
+    by = c("person_id", "time_utc")
+  ) |>
+  distinct(
+    person_id,
+    time_utc,
+    .keep_all = TRUE
+  )
+
+nrow(dev_timed)
+
+nrow(dev_dedup)
+```
+
+Participant `r dev_person_id` had `r nrow(dev_duplicate_groups)` duplicate timestamp groups, of which `r nrow(dev_conflicting_keys)` had disagreeing glucose values. Removing duplicates took the table from `r nrow(dev_timed)` readings to `r nrow(dev_dedup)`.
+
+When two readings claim the same instant but report different glucose values, there is no way to tell which one is right, so both are removed and the removal is recorded.
+
+## Step 8: Confirm the Glucose Unit
+
+```{r}
+
+# Count the units actually recorded, then flag anything that is not mg/dL.
+
+dev_dedup |>
+  count(
+    glucose_unit,
+    name = "number_of_readings"
+  ) |>
+  kable(
+    col.names = c(
+      "Glucose unit",
+      "Number of readings"
+    )
+  )
+```
+
+```{r}
+
+dev_dedup <- dev_dedup |>
+  mutate(
+    unit_flag = is.na(glucose_unit) | glucose_unit != "mg/dL"
+  )
+
+sum(dev_dedup$unit_flag)
+```
+
+All `r nrow(dev_dedup)` readings for participant `r dev_person_id` were recorded in mg/dL, so `r sum(dev_dedup$unit_flag)` readings were flagged. The unit matters because the 40 to 400 range check in Step 9, and every summary later in the key, assume units mg/dL.
+
+## Step 9: Flag Unusual Glucose Values
+
+```{r}
+
+# Flag readings below 40 or above 400 mg/dL.
+
+dev_dedup <- dev_dedup |>
+  mutate(
+    unusual_value_flag = !is.na(glucose_value_numeric) &
+      (glucose_value_numeric < glucose_lower_bound |
+         glucose_value_numeric > glucose_upper_bound)
+  )
+
+sum(dev_dedup$unusual_value_flag)
+```
+
+Participant `r dev_person_id` had `r sum(dev_dedup$unusual_value_flag)` readings outside `r glucose_lower_bound` to `r glucose_upper_bound` mg/dL. This is a data-processing rule for this exercise. It is not a clinical statement about which glucose values are possible.
+
+## Step 10: Create the Clean Reading-Level Table
+
+```{r}
+
+# Keep only readings that passed every check. One row is now one
+# unique, usable glucose reading. The earlier objects are unchanged.
+
+dev_reading_level <- dev_dedup |>
+  filter(
+    !is.na(glucose_value_numeric),
+    !unit_flag,
+    !unusual_value_flag
+  ) |>
+  select(
+    person_id,
+    event_type,
+    time_utc,
+    time_local,
+    date_local,
+    hour_local,
+    timezone_abbreviation,
+    timezone_label_json,
+    is_dst,
+    glucose_value_original,
+    glucose_value_numeric,
+    glucose_unit
+  )
+
+glimpse(dev_reading_level)
+```
+
+The cleaned table holds `r nrow(dev_reading_level)` readings, down from the `r nrow(dev_egv)` estimated glucose value events the file started with. The raw objects are still available, so any step can be checked without reading the file again.
+
+## Step 11: Count Readings per Local Day and Mark Valid Days
+
+```{r}
+
+# A complete local day holds 288 readings. A day is valid at 202 or more.
+
+dev_day_counts <- dev_reading_level |>
+  count(
+    person_id,
+    date_local,
+    name = "n_readings"
+  ) |>
+  mutate(
+    valid_day = n_readings >= min_readings_valid_day
+  )
+
+dev_day_counts |>
+  kable(
+    col.names = c(
+      "Person ID",
+      "Local date",
+      "Cleaned readings",
+      "Valid day"
+    )
+  )
+```
+
+Participant `r dev_person_id` had `r nrow(dev_day_counts)` local days with data, of which `r sum(dev_day_counts$valid_day)` reached the `r min_readings_valid_day` reading threshold. The days that fail are usually the first and last days of wear, which are only partly recorded.
+
+## Step 12: Flag Dates That Cross a Daylight-Saving Transition
+
+```{r}
+
+# A date that shows two different timezone abbreviations crossed a
+# daylight-saving transition.
+
+dev_dst_notes <- dev_reading_level |>
+  group_by(
+    person_id,
+    date_local
+  ) |>
+  summarise(
+    abbreviations = paste(
+      unique(timezone_abbreviation[order(time_local)]),
+      collapse = " to "
+    ),
+    number_of_abbreviations = n_distinct(timezone_abbreviation),
+    .groups = "drop"
+  ) |>
+  filter(number_of_abbreviations > 1)
+
+nrow(dev_dst_notes)
+```
+
+Participant `r dev_person_id` had `r nrow(dev_dst_notes)` date(s) that crossed a daylight-saving transition.
+
+On such a date the local day is not 24 hours long. A spring-forward day is 23 hours and holds at most 276 readings, and a fall-back day is 25 hours and holds up to 300. As instructed, the `r min_readings_valid_day` reading threshold is left unchanged for these dates. They are flagged in the quality-control notes instead. The cleaning function below records the direction of the transition and the day length for every affected date.
+
+# Apply the Cleaning Steps to Every Participant
+
+## Wrap the Steps into a Function
+
+The twelve steps above are collected into one function so that exactly the same cleaning is applied to every participant. Writing the steps once and calling them many times also means a change to a rule only has to be made in one place.
+
+`clean_one_cgm()` reads one Dexcom JSON file and returns five tables in a named list:
+
+| Returned table  | What it contains                                   | Step    |
+|------------------------|------------------------|------------------------|
+| `reading_level` | One row per usable glucose reading                 | 10      |
+| `day_counts`    | One row per local day, with the valid-day flag     | 11      |
+| `dst_notes`     | One row per date crossing a daylight-saving change | 12      |
+| `tz_qc`         | One row recording the timezone check               | 3       |
+| `qc_summary`    | One row of counts, used for Table 1                | 6 to 11 |
+
+Returning the tables together in one list follows Eric's `process_one_participant()`. The comments inside the function give the step number that each block came from, so it can be read alongside the section above.
+
+```{r}
+
+clean_one_cgm <- function(json_path) {
+
+  # Function structure (one call returning a named list of reading-level,
+  # day-count, DST, and QC tables) follows Eric's work
+  # JSON parsing with flatten = TRUE follows Shubho's work.
+
+  raw <- fromJSON(
+    json_path,
+    flatten = TRUE
+  )
+
+  person_id_header <- raw$header$patient_id
+
+  pid <- as.numeric(
+    str_remove(person_id_header, "AIREADI-")
+  )
+
+  tz_label <- str_to_lower(raw$header$timezone)
+
+  cgm_raw <- as_tibble(raw$body$cgm)
+
+  # Step 1: keep estimated glucose value events only.
+  # Step 2: timestamps end in "Z", so they are parsed as UTC.
+  #
+  # as.character() is applied to the glucose value before as.numeric()
+  # because Dexcom writes "Low" and "High" as sentinel strings. This makes
+  # the column character in some files and integer in others, and the two
+  # types cannot be combined across participants without an explicit cast.
+
+  egv <- cgm_raw |>
+    filter(event_type == "EGV") |>
+    transmute(
+      person_id = pid,
+      event_type,
+      timezone_label_json = tz_label,
+      time_utc = ymd_hms(
+        effective_time_frame.time_interval.start_date_time,
+        tz = "UTC",
+        quiet = TRUE
+      ),
+      glucose_value_original = as.character(blood_glucose.value),
+      glucose_value_numeric = suppressWarnings(
+        as.numeric(glucose_value_original)
+      ),
+      glucose_unit = blood_glucose.unit
+    )
+
+  n_raw_egv <- nrow(egv)
+
+  # Step 3: infer the regional timezone from the JSON label and check it
+  # against the clinical site.
+  #
+  # The JSON header says "pst" and the clinical site is UW.
+  # We interpret this as US Pacific Time and use "America/Los_Angeles"
+  # for its timezone and daylight-saving rules. R determines whether
+  # each individual timestamp is PST or PDT.
+  #
+  # A label that cannot be mapped at all means we cannot localize the
+  # readings, so the participant is flagged and returns no clean readings.
+  # A label that maps successfully but disagrees with the clinical site is
+  # also flagged for human review, rather than being silently overridden.
+
+  tz_match <- tz_map |>
+    filter(timezone_label_json == tz_label)
+
+  site_value <- participant_sites |>
+    filter(person_id == pid) |>
+    pull(clinical_site)
+
+  site_match <- site_region_map |>
+    filter(clinical_site %in% site_value)
+
+  iana_zone <- if (nrow(tz_match) == 1) {
+    tz_match$iana_zone
+  } else {
+    NA_character_
+  }
+
+  expected_region <- if (nrow(tz_match) == 1) {
+    tz_match$expected_region
+  } else {
+    NA_character_
+  }
+
+  site_region <- if (nrow(site_match) == 1) {
+    site_match$site_region
+  } else {
+    NA_character_
+  }
+
+  tz_site_consistent <- !is.na(expected_region) &
+    !is.na(site_region) &
+    expected_region == site_region
+
+  tz_qc <- tibble(
+    person_id = pid,
+    timezone_label_json = tz_label,
+    iana_zone = iana_zone,
+    clinical_site = if (length(site_value) == 1) {
+      site_value
+    } else {
+      NA_character_
+    },
+    expected_region = expected_region,
+    site_region = site_region,
+    tz_site_consistent = tz_site_consistent,
+    tz_flag_for_review = is.na(iana_zone) | !tz_site_consistent
+  )
+
+  empty_result <- list(
+    reading_level = tibble(),
+    day_counts = tibble(),
+    dst_notes = tibble(),
+    tz_qc = tz_qc,
+    qc_summary = tibble(
+      person_id = pid,
+      raw_egv_readings = n_raw_egv,
+      missing_timestamps = sum(is.na(egv$time_utc)),
+      missing_glucose = sum(is.na(egv$glucose_value_numeric)),
+      duplicate_timestamps = NA_integer_,
+      conflicting_duplicates = NA_integer_,
+      nonstandard_units = NA_integer_,
+      unusual_values = NA_integer_,
+      cleaned_readings = 0L,
+      valid_days = 0L,
+      excluded_duplicate_readings = NA_integer_,
+      excluded_missing_glucose = NA_integer_,
+      excluded_units = NA_integer_,
+      excluded_unusual = NA_integer_
+    )
+  )
+
+  if (is.na(iana_zone) || n_raw_egv == 0) {
+    return(empty_result)
+  }
+
+  # Step 4: convert to local time and derive the local calendar variables.
+  # timezone_abbreviation is taken per reading rather than from the header,
+  # so a participant recorded across a transition shows both PDT and PST.
+
+  egv <- egv |>
+    mutate(
+      time_local = with_tz(time_utc, tzone = iana_zone),
+      date_local = as_date(time_local),
+      hour_local = hour(time_local),
+      timezone_abbreviation = format(time_local, "%Z"),
+      is_dst = dst(time_local)
+    )
+
+  # Step 6: count missing timestamps and missing glucose values.
+  # "Low" and "High" become NA on conversion and are counted here.
+
+  n_missing_timestamps <- sum(is.na(egv$time_utc))
+
+  n_missing_glucose <- sum(is.na(egv$glucose_value_numeric))
+
+  # Step 7: a duplicate is the same participant ID and UTC timestamp.
+  # Duplicates that agree on glucose collapse to a single copy.
+  # Duplicates that disagree are flagged and excluded entirely, because
+  # there is no basis for choosing between the conflicting values.
+  #
+  # This rule is from Shubho's work. It is
+  # adopted here in preference to keeping the first copy, because the
+  # cohort does contain conflicting duplicates.
+
+  duplicate_groups <- egv |>
+    filter(!is.na(time_utc)) |>
+    group_by(person_id, time_utc) |>
+    summarise(
+      number_of_rows = n(),
+      number_of_distinct_values = n_distinct(glucose_value_numeric),
+      .groups = "drop"
+    ) |>
+    filter(number_of_rows > 1)
+
+  conflicting_keys <- duplicate_groups |>
+    filter(number_of_distinct_values > 1) |>
+    select(person_id, time_utc)
+
+  n_duplicate_timestamps <- nrow(duplicate_groups)
+
+  n_conflicting_duplicates <- nrow(conflicting_keys)
+
+  egv_timed <- egv |>
+    filter(!is.na(time_utc))
+
+  egv_dedup <- egv_timed |>
+    anti_join(
+      conflicting_keys,
+      by = c("person_id", "time_utc")
+    ) |>
+    distinct(person_id, time_utc, .keep_all = TRUE)
+
+  # Duplicate handling removes whole rows, and one conflicting group of two
+  # rows removes two readings. This row count, not the group count, is what
+  # the cohort funnel below needs in order to reconcile exactly.
+
+  n_duplicate_readings_removed <- nrow(egv_timed) - nrow(egv_dedup)
+
+  # Step 8: confirm that glucose is recorded in mg/dL. Any other unit is
+  # flagged and excluded, because the 40-400 range check below and every
+  # summary in this notebook assume mg/dL.
+
+  egv_dedup <- egv_dedup |>
+    mutate(
+      unit_flag = is.na(glucose_unit) | glucose_unit != "mg/dL"
+    )
+
+  # Step 9: flag values below 40 or above 400 mg/dL as unusual and exclude
+  # them. This is a data-processing rule, not a clinical definition.
+
+  egv_dedup <- egv_dedup |>
+    mutate(
+      unusual_value_flag = !is.na(glucose_value_numeric) &
+        (glucose_value_numeric < glucose_lower_bound |
+           glucose_value_numeric > glucose_upper_bound)
+    )
+
+  n_nonstandard_units <- sum(egv_dedup$unit_flag)
+
+  n_unusual <- sum(egv_dedup$unusual_value_flag)
+
+  # The three exclusion rules above can apply to the same reading, so the
+  # cohort funnel needs counts that charge each excluded reading to exactly
+  # one rule. These cascade in the same order the filter below applies.
+
+  n_excluded_missing_glucose <- sum(
+    is.na(egv_dedup$glucose_value_numeric)
+  )
+
+  n_excluded_units <- sum(
+    !is.na(egv_dedup$glucose_value_numeric) &
+      egv_dedup$unit_flag
+  )
+
+  n_excluded_unusual <- sum(
+    !is.na(egv_dedup$glucose_value_numeric) &
+      !egv_dedup$unit_flag &
+      egv_dedup$unusual_value_flag
+  )
+
+  # Step 10: the clean reading-level table. One row is one unique, usable
+  # glucose reading. The raw objects above are left unchanged.
+
+  reading_level <- egv_dedup |>
+    filter(
+      !is.na(glucose_value_numeric),
+      !unit_flag,
+      !unusual_value_flag
+    ) |>
+    select(
+      person_id,
+      event_type,
+      time_utc,
+      time_local,
+      date_local,
+      hour_local,
+      timezone_abbreviation,
+      timezone_label_json,
+      is_dst,
+      glucose_value_original,
+      glucose_value_numeric,
+      glucose_unit
+    )
+
+  # Step 11: count cleaned readings per local calendar day and mark a
+  # participant-day valid at 202 or more of the expected 288 readings.
+
+  day_counts <- reading_level |>
+    count(
+      person_id,
+      date_local,
+      name = "n_readings"
+    ) |>
+    mutate(
+      valid_day = n_readings >= min_readings_valid_day
+    )
+
+  # Step 12: flag local dates that span a daylight-saving-time transition.
+  # The valid-day threshold is deliberately left unchanged.
+
+  # Abbreviations are ordered by time rather than sorted alphabetically,
+  # so that a spring-forward date reads "PST to PDT" and a fall-back date
+  # reads "PDT to PST". Sorting would label both the same way.
+  #
+  # The true length of a local day is the distance between consecutive
+  # local midnights in the participant's own zone, which is 23 hours on a
+  # spring-forward date and 25 hours on a fall-back date. Midnight itself
+  # always exists, because US transitions occur at 2:00 AM local time.
+
+  dst_notes <- reading_level |>
+    group_by(person_id, date_local) |>
+    summarise(
+      abbreviations = paste(
+        unique(timezone_abbreviation[order(time_local)]),
+        collapse = " to "
+      ),
+      number_of_abbreviations = n_distinct(timezone_abbreviation),
+      .groups = "drop"
+    ) |>
+    filter(number_of_abbreviations > 1) |>
+    mutate(
+      day_length_hours = as.numeric(
+        difftime(
+          force_tz(as_datetime(date_local + 1), tzone = iana_zone),
+          force_tz(as_datetime(date_local), tzone = iana_zone),
+          units = "hours"
+        )
+      ),
+      transition = if_else(
+        day_length_hours < 24,
+        "Spring forward",
+        "Fall back"
+      ),
+      max_possible_readings = day_length_hours * 12,
+      qc_note = paste0(
+        transition,
+        " transition (",
+        abbreviations,
+        "). The local day is ",
+        day_length_hours,
+        " hours long, so at most ",
+        max_possible_readings,
+        " readings are possible instead of ",
+        expected_readings_per_day,
+        "."
+      )
+    )
+
+  day_counts <- day_counts |>
+    mutate(
+      crosses_dst = date_local %in% dst_notes$date_local
+    )
+
+  # The first block of columns is the quality-control summary requested for
+  # Table 1, and its schema and column names come from Eric's work.
+  # The excluded_* columns are the mutually exclusive cascade
+  # used by the cohort funnel, and are not displayed in Table 1.
+
+  qc_summary <- tibble(
+    person_id = pid,
+    raw_egv_readings = n_raw_egv,
+    missing_timestamps = n_missing_timestamps,
+    missing_glucose = n_missing_glucose,
+    duplicate_timestamps = n_duplicate_timestamps,
+    conflicting_duplicates = n_conflicting_duplicates,
+    nonstandard_units = n_nonstandard_units,
+    unusual_values = n_unusual,
+    cleaned_readings = nrow(reading_level),
+    valid_days = sum(day_counts$valid_day),
+    excluded_duplicate_readings = n_duplicate_readings_removed,
+    excluded_missing_glucose = n_excluded_missing_glucose,
+    excluded_units = n_excluded_units,
+    excluded_unusual = n_excluded_unusual
+  )
+
+  list(
+    reading_level = reading_level,
+    day_counts = day_counts,
+    dst_notes = dst_notes,
+    tz_qc = tz_qc,
+    qc_summary = qc_summary
+  )
+}
+```
+
+*Make sure to note these two choices from the function:*
+
+The participant ID in `qc_summary` is read from the JSON header, not from the cleaned table. A participant whose readings are all removed therefore still produces a quality-control row, instead of disappearing from Table 1 without explanation.
+
+A timezone label that cannot be matched returns empty tables rather than stopping with an error. One unusual file cannot then halt the whole run, and the participant still appears in the timezone review table.
+
+## Check the Function Against the Steps Worked by Hand
+
+Before using the function on other participants, it is run on the development participant and its answers are compared with the numbers produced step by step above. If the two disagree, the function does not do what the steps did.
+
+```{r}
+
+result_one <- clean_one_cgm(dev_path)
+
+result_one$qc_summary |>
+  kable()
+```
+
+```{r}
+
+# Compare the function output with the hand-worked results from Steps 1 to 11.
+
+function_check <- tibble(
+  quantity = c(
+    "Raw EGV readings",
+    "Duplicate timestamp groups",
+    "Cleaned readings",
+    "Valid days"
+  ),
+  worked_by_hand = c(
+    nrow(dev_egv),
+    nrow(dev_duplicate_groups),
+    nrow(dev_reading_level),
+    sum(dev_day_counts$valid_day)
+  ),
+  from_the_function = c(
+    result_one$qc_summary$raw_egv_readings,
+    result_one$qc_summary$duplicate_timestamps,
+    result_one$qc_summary$cleaned_readings,
+    result_one$qc_summary$valid_days
+  )
+)
+
+function_matches <- all(
+  function_check$worked_by_hand ==
+    function_check$from_the_function
+)
+
+function_check |>
+  kable(
+    col.names = c(
+      "Quantity",
+      "Worked by hand",
+      "From the function"
+    )
+  )
+```
+
+`r if (function_matches) "The function reproduced every number from the step-by-step section, so it can be trusted on the remaining participants." else "The function did not reproduce the step-by-step numbers. The difference must be resolved before the function is used on other participants."`
+
+## Test the Function on Five Participants
+
+```{r}
+
+five_paths <- head(cohort_files$json_path, 5)
+
+results_five <- map(five_paths, clean_one_cgm)
+
+results_five |>
+  map_dfr("qc_summary") |>
+  kable()
+```
+
+## Run on the Full Cohort
+
+`purrr::possibly()` lets a single unreadable file fail without stopping the whole run, and `compact()` then drops the resulting `NULL` entries before the results are combined. This pattern is taken from Eric's work.
+
+```{r}
+
+safe_clean_one_cgm <- possibly(
+  clean_one_cgm,
+  otherwise = NULL
+)
+
+run_start_time <- Sys.time()
+
+results_all <- map(
+  cohort_files$json_path,
+  safe_clean_one_cgm
+)
+
+run_elapsed_seconds <- as.numeric(
+  difftime(
+    Sys.time(),
+    run_start_time,
+    units = "secs"
+  )
+)
+
+failed_ids <- cohort_files$person_id[map_lgl(results_all, is.null)]
+
+results_all <- compact(results_all)
+```
+
+## Define Values for Dynamic Reporting
+
+The following chunk combines the per-participant results and calculates values used in the written results. This could is setup, and can be hidden if for a formal final analysis.
+
+```{r}
+#| echo: true
+#| results: hide
+
+qc_summary_all <- results_all |>
+  map_dfr("qc_summary")
+
+tz_qc_all <- results_all |>
+  map_dfr("tz_qc")
+
+reading_level_all <- results_all |>
+  map_dfr("reading_level")
+
+day_counts_all <- results_all |>
+  map_dfr("day_counts")
+
+dst_notes_all <- results_all |>
+  map_dfr("dst_notes")
+
+n_processed <- nrow(qc_summary_all)
+
+n_failed <- length(failed_ids)
+
+n_flagged_tz <- sum(
+  tz_qc_all$tz_flag_for_review,
+  na.rm = TRUE
+)
+
+n_raw_egv_total <- sum(qc_summary_all$raw_egv_readings)
+
+n_missing_glucose_total <- sum(qc_summary_all$missing_glucose)
+
+n_missing_timestamps_total <- sum(qc_summary_all$missing_timestamps)
+
+n_duplicate_timestamps_total <- sum(
+  qc_summary_all$duplicate_timestamps,
+  na.rm = TRUE
+)
+
+n_conflicting_duplicates_total <- sum(
+  qc_summary_all$conflicting_duplicates,
+  na.rm = TRUE
+)
+
+n_nonstandard_units_total <- sum(
+  qc_summary_all$nonstandard_units,
+  na.rm = TRUE
+)
+
+n_unusual_values_total <- sum(
+  qc_summary_all$unusual_values,
+  na.rm = TRUE
+)
+
+n_cleaned_readings_total <- sum(qc_summary_all$cleaned_readings)
+
+n_excluded_duplicate_readings_total <- sum(
+  qc_summary_all$excluded_duplicate_readings,
+  na.rm = TRUE
+)
+
+n_excluded_missing_glucose_total <- sum(
+  qc_summary_all$excluded_missing_glucose,
+  na.rm = TRUE
+)
+
+n_excluded_units_total <- sum(
+  qc_summary_all$excluded_units,
+  na.rm = TRUE
+)
+
+n_excluded_unusual_total <- sum(
+  qc_summary_all$excluded_unusual,
+  na.rm = TRUE
+)
+
+n_with_valid_day <- sum(qc_summary_all$valid_days > 0)
+
+n_without_valid_day <- sum(qc_summary_all$valid_days == 0)
+
+ids_without_valid_day <- qc_summary_all |>
+  filter(valid_days == 0) |>
+  pull(person_id)
+
+n_dst_participants <- n_distinct(dst_notes_all$person_id)
+
+n_dst_days <- nrow(dst_notes_all)
+```
+
+## Participants Used in This Notebook
+
+The workflow was developed on one participant, tested on five, and then run on every available CGM participant. No smaller final group was necessary.
+
+```{r}
+
+tibble(
+  stage = c(
+    "Development",
+    "Testing",
+    "Final run: files attempted",
+    "Final run: processed successfully",
+    "Final run: failed to process",
+    "Final run: at least one valid local day"
+  ),
+  number_of_participants = c(
+    1,
+    5,
+    n_cohort_files_found,
+    n_processed,
+    n_failed,
+    n_with_valid_day
+  )
+) |>
+  kable(
+    col.names = c(
+      "Stage",
+      "Number of participants"
+    )
+  )
+```
+
+All `r n_cohort_files_found` participants with a Dexcom file were processed, taking about `r round(run_elapsed_seconds, 1)` seconds. `r n_failed` file(s) failed to process (`r if (n_failed > 0) paste(failed_ids, collapse = ", ") else "none"`). Of the `r n_processed` participants processed, `r n_with_valid_day` had at least one valid local day and `r n_without_valid_day` had none (`r if (n_without_valid_day > 0) paste(ids_without_valid_day, collapse = ", ") else "none"`). Participants with no valid day are kept in the quality-control table and excluded from every summary that follows.
+
+# Produce the Required Outputs
+
+## Table 1: CGM Quality-Control Summary by Participant
+
+```{r}
+
+qc_summary_all |>
+  arrange(person_id) |>
+  select(!starts_with("excluded_")) |>
+  kable(
+    col.names = c(
+      "Person ID",
+      "Raw EGV readings",
+      "Missing timestamps",
+      "Missing glucose",
+      "Duplicate timestamps",
+      "Conflicting duplicates",
+      "Non-standard units",
+      "Unusual values",
+      "Cleaned readings",
+      "Valid days"
+    )
+  ) |>
+  kable_styling(
+    bootstrap_options = c("striped", "condensed"),
+    font_size = 12
+  ) |>
+  scroll_box(height = "400px")
+```
+
+Table 1 shows how much CGM data each participant started with and how much was left after each cleaning rule. Across `r n_processed` participants, `r n_raw_egv_total` raw readings became `r n_cleaned_readings_total` cleaned readings.
+
+The table does not prove anything about anyone's glucose control. It reports data quality only. A participant with many cleaned readings is a participant whose sensor recorded well, not a participant whose glucose is good, and a cleaned reading is not necessarily an accurate one.
+
+## Missing, Duplicate, and Out-of-Range Detail
+
+```{r}
+
+# Trace every raw reading to exactly one outcome. Each reading is charged
+# to the first rule that excluded it, so the exclusions and the retained
+# readings sum back to the raw total.
+
+cleaning_funnel <- tibble(
+  rule = c(
+    "Raw EGV readings",
+    "Excluded: missing timestamp",
+    "Excluded: duplicate UTC timestamp",
+    "Excluded: non-numeric glucose (Dexcom 'Low' / 'High')",
+    "Excluded: not recorded in mg/dL",
+    "Excluded: outside 40-400 mg/dL",
+    "Cleaned readings retained"
+  ),
+  number_of_readings = c(
+    n_raw_egv_total,
+    n_missing_timestamps_total,
+    n_excluded_duplicate_readings_total,
+    n_excluded_missing_glucose_total,
+    n_excluded_units_total,
+    n_excluded_unusual_total,
+    n_cleaned_readings_total
+  )
+)
+
+funnel_reconciles <- (
+  n_raw_egv_total -
+    n_missing_timestamps_total -
+    n_excluded_duplicate_readings_total -
+    n_excluded_missing_glucose_total -
+    n_excluded_units_total -
+    n_excluded_unusual_total
+) == n_cleaned_readings_total
+
+cleaning_funnel |>
+  kable(
+    col.names = c(
+      "Cleaning rule",
+      "Number of readings"
+    )
+  )
+```
+
+`r if (funnel_reconciles) "The exclusions and the retained readings sum exactly to the raw total, so every raw reading is accounted for." else "The exclusions and the retained readings do not sum to the raw total, which means a reading was charged to more than one rule and the cascade should be checked."`
+
+Two results in this table are worth reading closely.
+
+Every duplicated timestamp in this dataset carried a different glucose value. All `r n_duplicate_timestamps_total` duplicate groups were therefore treated as disagreeing and removed, and none were reduced to a single copy.
+
+The `r n_missing_glucose_total` readings with no numeric value are the words `"Low"` and `"High"`, which the sensor writes when a reading falls outside the range it can report. Removing them is a cautious choice, and it has a cost: the summaries below slightly understate how much time was spent below 70 and above 180 mg/dL, because the readings furthest outside that range are the ones being dropped.
+
+## Timezone and Clinical-Site Consistency Check
+
+`janitor::tabyl()` cross-tabulates the region implied by each participant's device timezone label against the region of their clinical site, so that any mismatch is visible at a glance.
+
+```{r}
+
+tz_qc_all |>
+  tabyl(expected_region, site_region) |>
+  adorn_totals(c("row", "col")) |>
+  adorn_title(
+    placement = "combined",
+    row_name = "Region from device label",
+    col_name = "Region from clinical site"
+  ) |>
+  kable()
+```
+
+```{r}
+
+# List the timezone label actually recorded for each clinical site.
+
+tz_qc_all |>
+  count(
+    clinical_site,
+    timezone_label_json,
+    iana_zone,
+    name = "number_of_participants"
+  ) |>
+  arrange(clinical_site) |>
+  kable(
+    col.names = c(
+      "Clinical site",
+      "Timezone label in JSON",
+      "IANA zone used",
+      "Number of participants"
+    )
+  )
+```
+
+`r n_flagged_tz` participant(s) were flagged for a device and clinical-site mismatch. `r if (n_flagged_tz == 0) "Every device timezone label was consistent with its clinical site, so all local times can be trusted." else "These participants should be reviewed individually rather than auto-corrected, because the correct answer depends on whether the participant travelled or the device was configured incorrectly."`
+
+## Daylight-Saving-Time Notes
+
+```{r}
+
+if (n_dst_days > 0) {
+  dst_notes_all |>
+    arrange(person_id, date_local) |>
+    select(
+      person_id,
+      date_local,
+      transition,
+      abbreviations,
+      day_length_hours,
+      max_possible_readings
+    ) |>
+    kable(
+      col.names = c(
+        "Person ID",
+        "Local date",
+        "Transition",
+        "Abbreviations",
+        "Day length (hours)",
+        "Maximum possible readings"
+      )
+    )
+} else {
+  tibble(
+    note = "No participant recording crossed a daylight-saving-time transition."
+  ) |>
+    kable(col.names = "Quality-control note")
+}
+```
+
+`r n_dst_participants` participant(s) recorded across a daylight-saving-time transition, affecting `r n_dst_days` local date(s). On a spring-forward date the local day is 23 hours long and can hold at most 276 readings; on a fall-back date it is 25 hours long and can hold up to 300. As instructed, the 202-reading threshold is left unchanged for these dates, so the percent-of-expected column can exceed 100 on a fall-back date. These dates are flagged rather than corrected.
+
+## Table 2: Participant-Level CGM Features
+
+Only cleaned readings from valid local days are used from this point forward. The feature names in Tables 2 and 3 below follow Eric's work, which were clean.
+
+```{r}
+
+valid_readings_all <- reading_level_all |>
+  inner_join(
+    day_counts_all |>
+      filter(valid_day) |>
+      select(person_id, date_local),
+    by = c("person_id", "date_local")
+  )
+
+participant_summary <- valid_readings_all |>
+  group_by(person_id) |>
+  summarise(
+    n_readings = n(),
+    n_valid_days = n_distinct(date_local),
+    mean_glucose = mean(glucose_value_numeric),
+    median_glucose = median(glucose_value_numeric),
+    sd_glucose = sd(glucose_value_numeric),
+    cv_glucose = sd_glucose / mean_glucose * 100,
+    pct_70_180 = mean(
+      glucose_value_numeric >= 70 & glucose_value_numeric <= 180
+    ) * 100,
+    pct_above_180 = mean(glucose_value_numeric > 180) * 100,
+    pct_above_250 = mean(glucose_value_numeric > 250) * 100,
+    pct_below_70 = mean(glucose_value_numeric < 70) * 100,
+    pct_below_54 = mean(glucose_value_numeric < 54) * 100,
+    .groups = "drop"
+  )
+
+participant_summary |>
+  kable(
+    digits = 1,
+    col.names = c(
+      "Person ID",
+      "Cleaned readings",
+      "Valid days",
+      "Mean",
+      "Median",
+      "SD",
+      "CV (%)",
+      "70-180 (%)",
+      ">180 (%)",
+      ">250 (%)",
+      "<70 (%)",
+      "<54 (%)"
+    )
+  ) |>
+  kable_styling(
+    bootstrap_options = c("striped", "condensed"),
+    font_size = 12
+  ) |>
+  scroll_box(height = "400px")
+```
+
+Table 2 gives one row per participant. It shows the average level of each participant's glucose and how much it varied across all of their valid local days.
+
+Because readings arrive about every five minutes, the percentage of readings in a range is used as an estimate of the percentage of time spent in that range. The ranges overlap on purpose. A reading above 250 is also counted above 180, and a reading below 54 is also counted below 70.
+
+The table does not prove why any participant's glucose behaved as it did. Meals, medication, activity, sleep, and illness are not recorded in these data. It also does not diagnose anyone, because up to ten days of monitoring is not a clinical assessment.
+
+## Table 3: Valid Participant-Day CGM Features
+
+Daytime is defined as 6:00 AM through 11:59 PM local time and nighttime is defined as 12:00 AM through 5:59 AM local time. These are clock-time periods, not measured sleep and waking periods. Once Garmin data are available, each participant's observed bedtime and wake time should be used instead. This point was mentioned by Shubho in the previous meeting.
+
+```{r}
+
+participant_day_summary <- valid_readings_all |>
+  mutate(
+    period = if_else(
+      hour_local >= daytime_start_hour,
+      "daytime",
+      "nighttime"
+    )
+  ) |>
+  group_by(person_id, date_local) |>
+  summarise(
+    n_readings = n(),
+    pct_expected = n() / expected_readings_per_day * 100,
+    mean_glucose = mean(glucose_value_numeric),
+    sd_glucose = sd(glucose_value_numeric),
+    pct_70_180 = mean(
+      glucose_value_numeric >= 70 & glucose_value_numeric <= 180
+    ) * 100,
+    pct_above_180 = mean(glucose_value_numeric > 180) * 100,
+    pct_below_70 = mean(glucose_value_numeric < 70) * 100,
+    n_daytime = sum(period == "daytime"),
+    n_nighttime = sum(period == "nighttime"),
+    mean_glucose_daytime = mean(
+      glucose_value_numeric[period == "daytime"]
+    ),
+    mean_glucose_nighttime = mean(
+      glucose_value_numeric[period == "nighttime"]
+    ),
+    sd_glucose_daytime = sd(
+      glucose_value_numeric[period == "daytime"]
+    ),
+    sd_glucose_nighttime = sd(
+      glucose_value_numeric[period == "nighttime"]
+    ),
+    .groups = "drop"
+  ) |>
+  mutate(
+    across(
+      where(is.numeric),
+      ~ if_else(is.nan(.x), NA_real_, .x)
+    )
+  ) |>
+  left_join(
+    day_counts_all |>
+      select(person_id, date_local, crosses_dst),
+    by = c("person_id", "date_local")
+  )
+
+participant_day_summary |>
+  kable(
+    digits = 1,
+    col.names = c(
+      "Person ID",
+      "Local date",
+      "Readings",
+      "Expected (%)",
+      "Mean",
+      "SD",
+      "70-180 (%)",
+      ">180 (%)",
+      "<70 (%)",
+      "Day n",
+      "Night n",
+      "Day mean",
+      "Night mean",
+      "Day SD",
+      "Night SD",
+      "Crosses DST"
+    )
+  ) |>
+  kable_styling(
+    bootstrap_options = c("striped", "condensed"),
+    font_size = 11
+  ) |>
+  scroll_box(height = "400px")
+```
+
+Table 3 gives one row per valid participant-day. Each day is split into a daytime and a nighttime period so that the two can be compared. This is the table that will be joined to sleep and activity data in Week 3.
+
+The table does not prove that any daytime and nighttime difference reflects sleep. The split is by the clock, not by when anyone actually slept, so a participant who works nights or sleeps late is placed in the wrong period. The two periods are also different lengths, six hours against eighteen, so their counts are not directly comparable.
+
+## Figure 1: Full CGM Trace for One Participant
+
+```{r}
+
+# Selection rule: among participants with the maximum number of valid days,
+# take the one with the most cleaned readings. This picks the most complete
+# record in the cohort, and the rule is deterministic and disclosed.
+#
+# The practice of stating a disclosed selection rule whenever a participant
+# or a day is chosen for a figure is Shubho's, and the
+# slice_max(..., with_ties = FALSE) idiom for it is Eric's.
+
+example_participant <- participant_summary |>
+  filter(n_valid_days == max(n_valid_days)) |>
+  slice_max(
+    n_readings,
+    n = 1,
+    with_ties = FALSE
+  )
+
+example_id <- example_participant$person_id
+
+trace_one <- valid_readings_all |>
+  filter(person_id == example_id)
+
+ggplot(
+  trace_one,
+  aes(
+    x = time_local,
+    y = glucose_value_numeric
+  )
+) +
+  geom_line(
+    color = "steelblue",
+    linewidth = 0.3
+  ) +
+  geom_hline(
+    yintercept = c(70, 180),
+    linetype = "dashed",
+    color = "gray40"
+  ) +
+  labs(
+    title = paste0(
+      "Figure 1: Full CGM Trace for Participant ",
+      example_id
+    ),
+    subtitle = paste0(
+      example_participant$n_valid_days,
+      " valid local days, ",
+      example_participant$n_readings,
+      " cleaned readings"
+    ),
+    x = "Local date and time",
+    y = "Glucose (mg/dL)"
+  )
+```
+
+Figure 1 shows every cleaned reading from the valid local days of participant `r example_id`. That participant was chosen by a stated rule: among the participants with the most valid days, the one with the most cleaned readings. This gives the most complete record in the cohort.
+
+The figure shows glucose rising and falling repeatedly, with some periods above the 180 mg/dL line. It does not prove what caused any of those rises, because meals, medication, activity, and sleep are not recorded here. One participant's trace also says nothing about the rest of the cohort.
+
+## Figure 2: One Valid Local Day for Each of Three Participants
+
+Three participants are selected to span the coefficient-of-variation distribution. They are the most stable, the median, and the most variable. This is more formulaic and structured than solely choosing by eye. For each of them we plot the single valid day with the most cleaned readings. Plotting against local hour of day rather than calendar time puts the three days on a common axis so their shapes can be compared.
+
+```{r}
+
+cv_selection <- participant_summary |>
+  arrange(cv_glucose) |>
+  mutate(
+    cv_rank = row_number(),
+    rank_group = case_when(
+      cv_rank == 1 ~ "Most stable",
+      cv_rank == ceiling(n() / 2) ~ "Median",
+      cv_rank == n() ~ "Most variable"
+    )
+  ) |>
+  filter(!is.na(rank_group))
+
+selected_ids <- cv_selection$person_id
+
+selected_days <- day_counts_all |>
+  filter(
+    valid_day,
+    person_id %in% selected_ids
+  ) |>
+  group_by(person_id) |>
+  slice_max(
+    n_readings,
+    n = 1,
+    with_ties = FALSE
+  ) |>
+  ungroup()
+
+trace_selected <- valid_readings_all |>
+  inner_join(
+    selected_days |>
+      select(person_id, date_local),
+    by = c("person_id", "date_local")
+  ) |>
+  left_join(
+    cv_selection |>
+      select(person_id, rank_group, cv_glucose),
+    by = "person_id"
+  ) |>
+  mutate(
+    time_of_day = hour_local + minute(time_local) / 60,
+    participant_label = paste0(
+      person_id,
+      " (",
+      rank_group,
+      ", CV ",
+      round(cv_glucose),
+      "%)"
+    )
+  )
+
+ggplot(
+  trace_selected,
+  aes(
+    x = time_of_day,
+    y = glucose_value_numeric,
+    color = participant_label
+  )
+) +
+  geom_line(linewidth = 0.6) +
+  geom_hline(
+    yintercept = c(70, 180),
+    linetype = "dashed",
+    color = "gray40"
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, 24, 4),
+    limits = c(0, 24)
+  ) +
+  labs(
+    title = "Figure 2: One Valid Local Day per Selected Participant",
+    x = "Local hour of day",
+    y = "Glucose (mg/dL)",
+    color = "Participant"
+  ) +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+
+# Report exactly which participants and dates were plotted.
+
+trace_selected |>
+  distinct(
+    person_id,
+    rank_group,
+    date_local
+  ) |>
+  left_join(
+    selected_days |>
+      select(person_id, n_readings),
+    by = "person_id"
+  ) |>
+  arrange(rank_group) |>
+  kable(
+    col.names = c(
+      "Person ID",
+      "Selection group",
+      "Local date plotted",
+      "Cleaned readings that day"
+    )
+  )
+```
+
+Figure 2 compares one valid local day from each of three participants. They were chosen by coefficient of variation, taking the most stable, the middle, and the most variable participant in the cohort, and the exact IDs and dates are listed in the table above.
+
+Visually, the three lines differ in shape. The most stable participant stays within a narrow band, and the most variable one moves across and outside the 70 to 180 mg/dL lines. The figure does not prove that these participants always look this way. Each line is one day out of up to ten, and a single day can be unusual because of a large meal, illness, or a sensor problem.
+
+## Figure 3: AGP-Style Profile for One Participant
+
+An ambulatory glucose profile overlays every valid day on a single 24-hour axis and summarises the distribution at each time of day. The helper below is written once and reused for Figure 4.
+
+```{r}
+
+# Binning readings to the nearest five minutes before taking the median and
+# the interquartile range, rather than grouping on the raw minute of day,
+# is taken from Eric's submission.
+
+build_agp_profile <- function(readings, id) {
+
+  readings |>
+    filter(person_id == id) |>
+    mutate(
+      minute_of_day = hour_local * 60 + minute(time_local),
+      minute_bin = round(minute_of_day / 5) * 5,
+      minute_bin = if_else(minute_bin >= 1440, 0, minute_bin)
+    ) |>
+    group_by(minute_bin) |>
+    summarise(
+      median_glucose = median(glucose_value_numeric),
+      p25 = quantile(glucose_value_numeric, 0.25),
+      p75 = quantile(glucose_value_numeric, 0.75),
+      .groups = "drop"
+    ) |>
+    mutate(
+      hour_of_day = minute_bin / 60,
+      person_id = id
+    )
+}
+
+agp_summary <- build_agp_profile(
+  valid_readings_all,
+  example_id
+)
+
+n_agp_days <- valid_readings_all |>
+  filter(person_id == example_id) |>
+  pull(date_local) |>
+  n_distinct()
+
+ggplot(
+  agp_summary,
+  aes(x = hour_of_day)
+) +
+  geom_ribbon(
+    aes(
+      ymin = p25,
+      ymax = p75
+    ),
+    fill = "steelblue",
+    alpha = 0.25
+  ) +
+  geom_line(
+    aes(y = median_glucose),
+    color = "steelblue",
+    linewidth = 0.8
+  ) +
+  geom_hline(
+    yintercept = c(70, 180),
+    linetype = "dashed",
+    color = "gray40"
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, 24, 4),
+    limits = c(0, 24)
+  ) +
+  labs(
+    title = paste0(
+      "Figure 3: AGP-Style Glucose Profile for Participant ",
+      example_id
+    ),
+    subtitle = paste0(
+      "Median with 25th to 75th percentile ribbon, from ",
+      n_agp_days,
+      " valid local days"
+    ),
+    x = "Local hour of day",
+    y = "Glucose (mg/dL)"
+  )
+```
+
+Figure 3 places all `r n_agp_days` valid local days of participant `r example_id` on a single 24-hour axis. The line is the median glucose at each time of day, and the ribbon covers the middle half of the readings at that time. A narrow ribbon means the participant repeats a similar pattern from day to day, and a wide ribbon means the days differ.
+
+This is an educational AGP-style figure built from `r n_agp_days` days. It is not a complete 14-day clinical AGP report and should not be read against the clinical targets. Averaging across days also hides any single unusual day completely. This observation was noted by Shubho.
+
+## Optional Figure 4: Similar HbA1c, Different CGM Pattern
+
+HbA1c is read from the OMOP `measurement` table in the clinical data. The source value `import_hba1c` is the glycated haemoglobin percentage; note that `lbscat_a1c` is labelled "Hemoglobin - g/dL" and is total haemoglobin, not HbA1c, so it must not be used here.
+
+```{r}
+
+measurement_path <- list.files(
+  file.path(data_dir, "clinical_data"),
+  pattern = "^measurement\\.csv$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+
+hba1c_available <- length(measurement_path) >= 1
+
+if (hba1c_available) {
+
+  hba1c <- read_csv(
+    measurement_path[1],
+    show_col_types = FALSE,
+    name_repair = "unique_quiet"
+  ) |>
+    filter(
+      str_detect(measurement_source_value, "import_hba1c"),
+      !is.na(value_as_number)
+    ) |>
+    group_by(person_id) |>
+    summarise(
+      hba1c_percent = mean(value_as_number),
+      .groups = "drop"
+    )
+
+  hba1c_features <- participant_summary |>
+    inner_join(hba1c, by = "person_id")
+
+  hba1c_available <- nrow(hba1c_features) >= 2
+
+} else {
+
+  hba1c_features <- tibble()
+}
+
+# YAML cannot parse "!expr !hba1c_available", because the second
+# exclamation mark reads as a second tag, so the negation is stored here.
+
+hba1c_missing <- !hba1c_available
+```
+
+```{r}
+#| eval: !expr hba1c_available
+
+# Find every pair of participants whose HbA1c differs by no more than
+# 0.2 percentage points, then keep the pair whose time in range differs
+# most. That is the pair where the same HbA1c hides the most different
+# CGM pattern.
+
+candidate_pairs <- hba1c_features |>
+  select(
+    person_id,
+    hba1c_percent,
+    pct_70_180,
+    cv_glucose,
+    mean_glucose
+  ) |>
+  rename_with(~ paste0(.x, "_a")) |>
+  cross_join(
+    hba1c_features |>
+      select(
+        person_id,
+        hba1c_percent,
+        pct_70_180,
+        cv_glucose,
+        mean_glucose
+      ) |>
+      rename_with(~ paste0(.x, "_b"))
+  ) |>
+  filter(person_id_a < person_id_b) |>
+  mutate(
+    hba1c_difference = abs(hba1c_percent_a - hba1c_percent_b),
+    tir_difference = abs(pct_70_180_a - pct_70_180_b)
+  ) |>
+  filter(hba1c_difference <= 0.2) |>
+  arrange(desc(tir_difference))
+
+n_candidate_pairs <- nrow(candidate_pairs)
+
+best_pair <- candidate_pairs |>
+  slice(1)
+
+pair_ids <- c(
+  best_pair$person_id_a,
+  best_pair$person_id_b
+)
+
+pair_profiles <- map_dfr(
+  pair_ids,
+  function(id) build_agp_profile(valid_readings_all, id)
+) |>
+  left_join(
+    hba1c_features |>
+      select(person_id, hba1c_percent, pct_70_180),
+    by = "person_id"
+  ) |>
+  mutate(
+    participant_label = paste0(
+      person_id,
+      " (HbA1c ",
+      sprintf("%.1f", hba1c_percent),
+      "%, ",
+      round(pct_70_180),
+      "% in range)"
+    )
+  )
+
+ggplot(
+  pair_profiles,
+  aes(
+    x = hour_of_day,
+    fill = participant_label,
+    color = participant_label
+  )
+) +
+  geom_ribbon(
+    aes(
+      ymin = p25,
+      ymax = p75
+    ),
+    alpha = 0.20,
+    color = NA
+  ) +
+  geom_line(
+    aes(y = median_glucose),
+    linewidth = 0.8
+  ) +
+  geom_hline(
+    yintercept = c(70, 180),
+    linetype = "dashed",
+    color = "gray40"
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, 24, 4),
+    limits = c(0, 24)
+  ) +
+  labs(
+    title = "Figure 4: Similar HbA1c, Different CGM Pattern",
+    subtitle = paste0(
+      "HbA1c differs by ",
+      sprintf("%.2f", best_pair$hba1c_difference),
+      " percentage points; time in range differs by ",
+      round(best_pair$tir_difference),
+      " points"
+    ),
+    x = "Local hour of day",
+    y = "Glucose (mg/dL)",
+    color = "Participant",
+    fill = "Participant"
+  ) +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+#| eval: !expr hba1c_available
+#| echo: false
+
+pair_note <- paste0(
+  "Participants ",
+  pair_ids[1],
+  " and ",
+  pair_ids[2],
+  " were selected from ",
+  n_candidate_pairs,
+  " candidate pairs whose HbA1c differed by at most 0.2 percentage points."
+)
+```
+
+```{r}
+#| eval: !expr hba1c_missing
+#| echo: false
+
+pair_note <- "Figure 4 is omitted because suitable HbA1c data were not available."
+```
+
+`r pair_note`
+
+Figure 4 puts the AGP-style profiles of these two participants on the same axes. Their HbA1c values are almost the same, but their daily glucose patterns are not. This is the practical reason for collecting CGM alongside HbA1c: a single average cannot show when during the day glucose is high, or how far it swings.
+
+The figure does not prove that CGM predicts health outcomes better than HbA1c. The pair was chosen because they differ the most, even with a less than 0.2 percentage point difference in HbA1c levels, so this is an illustration and not evidence. The HbA1c values also come from one clinic visit, which may not fall in the same period as the CGM wear.
+
+# Join and Data Quality Checks
+
+## Missing Values in the Feature Tables
+
+```{r}
+
+missingness_summary <- participant_day_summary |>
+  summarise(
+    across(
+      everything(),
+      ~ sum(is.na(.x))
+    )
+  ) |>
+  pivot_longer(
+    cols = everything(),
+    names_to = "variable",
+    values_to = "number_missing"
+  ) |>
+  mutate(
+    percent_missing = 100 * number_missing /
+      nrow(participant_day_summary)
+  ) |>
+  arrange(
+    desc(number_missing),
+    variable
+  )
+
+missingness_summary |>
+  kable(
+    col.names = c(
+      "Variable",
+      "Number missing",
+      "Percent missing"
+    ),
+    digits = 1
+  )
+```
+
+`r sum(missingness_summary$number_missing > 0)` variable(s) in the participant-day feature table had missing values. Missing standard deviations occur on any participant-day with a single reading in a period, and missing daytime or nighttime means occur where a valid day contains no readings at all in that clock window.
+
+## One Row per Participant-Day
+
+```{r}
+
+duplicate_day_keys <- participant_day_summary |>
+  count(
+    person_id,
+    date_local,
+    name = "number_of_rows"
+  ) |>
+  filter(number_of_rows > 1) |>
+  nrow()
+
+grain_check <- tibble(
+  check = c(
+    "Rows in the participant-day table",
+    "Unique person_id and date_local combinations",
+    "Duplicated person_id and date_local keys",
+    "Rows with a missing person_id",
+    "Rows with a missing date_local"
+  ),
+  number = c(
+    nrow(participant_day_summary),
+    nrow(distinct(participant_day_summary, person_id, date_local)),
+    duplicate_day_keys,
+    sum(is.na(participant_day_summary$person_id)),
+    sum(is.na(participant_day_summary$date_local))
+  )
+)
+
+grain_check |>
+  kable(
+    col.names = c(
+      "Quality-control check",
+      "Number"
+    )
+  )
+```
+
+`r if (duplicate_day_keys == 0) "No duplicated person_id and date_local keys were found, so the participant-day table is at the correct grain for joining with sleep and activity data." else "Duplicated person_id and date_local keys were found and should be investigated before joining."`
+
+## Reading Counts Reconcile
+
+```{r}
+
+# Confirm that no readings were created or lost between the cleaned
+# reading-level table and the valid-day summaries.
+
+reconciliation <- tibble(
+  step = c(
+    "Cleaned readings (all days)",
+    "Cleaned readings (valid days only)",
+    "Sum of readings in the participant-day table",
+    "Sum of readings in the participant-level table"
+  ),
+  number_of_readings = c(
+    nrow(reading_level_all),
+    nrow(valid_readings_all),
+    sum(participant_day_summary$n_readings),
+    sum(participant_summary$n_readings)
+  )
+)
+
+readings_reconcile <- n_distinct(
+  reconciliation$number_of_readings[2:4]
+) == 1
+
+reconciliation |>
+  kable(
+    col.names = c(
+      "Step",
+      "Number of readings"
+    )
+  )
+```
+
+`r if (readings_reconcile) "The valid-day reading counts agree across the reading-level table, the participant-day table, and the participant-level table, so no readings were duplicated or dropped by the summaries." else "The valid-day reading counts disagree across the three tables and the summaries should be investigated."`
+
+# Week 3 Preparation
+
+The reasoning for aligning on `time_local` is from Shubho.
+
+**Which participants have at least one valid local day?**
+
+```{r}
+
+qc_summary_all |>
+  mutate(
+    has_valid_day = valid_days > 0
+  ) |>
+  count(
+    has_valid_day,
+    name = "number_of_participants"
+  ) |>
+  kable(
+    col.names = c(
+      "Has at least one valid local day",
+      "Number of participants"
+    )
+  )
+```
+
+`r n_with_valid_day` of the `r n_processed` processed participants had at least one valid local day. `r if (n_without_valid_day == 0) "Every processed participant is usable in Week 3." else paste0("Participant(s) ", paste(ids_without_valid_day, collapse = ", "), " had no valid local day and are excluded from Week 3 joins.")`
+
+**Which local dates are valid for each participant, and where are the gaps?**
+
+```{r}
+
+date_coverage <- day_counts_all |>
+  filter(valid_day) |>
+  group_by(person_id) |>
+  summarise(
+    first_valid_date = min(date_local),
+    last_valid_date = max(date_local),
+    n_valid_days = n(),
+    n_calendar_days = as.numeric(
+      max(date_local) - min(date_local)
+    ) + 1,
+    .groups = "drop"
+  ) |>
+  mutate(
+    n_gap_days = n_calendar_days - n_valid_days
+  )
+
+date_coverage |>
+  kable(
+    col.names = c(
+      "Person ID",
+      "First valid date",
+      "Last valid date",
+      "Valid days",
+      "Calendar days spanned",
+      "Gap days"
+    )
+  ) |>
+  kable_styling(
+    bootstrap_options = c("striped", "condensed"),
+    font_size = 12
+  ) |>
+  scroll_box(height = "400px")
+```
+
+```{r}
+
+# List the interior gaps: dates inside a participant's monitoring window
+# that did not reach the valid-day threshold.
+
+valid_dates_by_person <- day_counts_all |>
+  filter(valid_day) |>
+  select(person_id, date_local)
+
+interior_gaps <- valid_dates_by_person |>
+  group_by(person_id) |>
+  reframe(
+    date_local = seq(
+      min(date_local),
+      max(date_local),
+      by = "1 day"
+    )
+  ) |>
+  anti_join(
+    valid_dates_by_person,
+    by = c("person_id", "date_local")
+  ) |>
+  left_join(
+    day_counts_all |>
+      select(person_id, date_local, n_readings),
+    by = c("person_id", "date_local")
+  ) |>
+  mutate(
+    n_readings = replace_na(n_readings, 0)
+  )
+
+n_interior_gaps <- nrow(interior_gaps)
+
+if (n_interior_gaps > 0) {
+  interior_gaps |>
+    arrange(person_id, date_local) |>
+    kable(
+      col.names = c(
+        "Person ID",
+        "Gap date",
+        "Cleaned readings that day"
+      )
+    ) |>
+    kable_styling(
+      bootstrap_options = c("striped", "condensed"),
+      font_size = 12
+    ) |>
+    scroll_box(height = "300px")
+} else {
+  tibble(
+    note = "No interior gaps: every date between each participant's first and last valid date is itself valid."
+  ) |>
+    kable(col.names = "Result")
+}
+```
+
+Each participant's valid dates run from their first to their last valid date as listed above. `r if (n_interior_gaps == 0) "There were no interior gaps, so the only incomplete days are the partial first and last days of wear, which fall outside the valid range and are already excluded." else paste0("There were ", n_interior_gaps, " interior gap date(s), listed above, where a date inside the monitoring window did not reach the 202-reading threshold.")` The partial first and last days of wear are the usual reason a participant has fewer than ten valid days.
+
+**Which timestamp will be used to align CGM with sleep and activity intervals?**
+
+`time_local` will be used, with `date_local` as the join key at the day level. Garmin sleep and activity intervals are recorded against the participant's local clock, so aligning on local time keeps a night's sleep attached to the calendar date a participant would recognise. `time_utc` is retained in the reading-level table as the unambiguous underlying instant, which matters on the `r n_dst_days` date(s) that cross a daylight-saving transition, where a local clock time can be ambiguous or nonexistent.
+
+**Does the participant-day table have exactly one row for each `person_id` and `date_local` combination?**
+
+Yes. The grain check above found `r nrow(participant_day_summary)` rows and `r nrow(distinct(participant_day_summary, person_id, date_local))` unique `person_id` and `date_local` combinations, with `r duplicate_day_keys` duplicated keys and no missing keys.
+
+**Is the participant-day table ready to join with sleep and activity data? Explain any remaining problems.**
+
+The table is ready to join. It is at one row per participant-day, has no duplicate or missing keys, and its glucose features are already summarised. Four things should be be remembered for Week 3:
+
+1.  `r n_without_valid_day` participant(s) have no valid local day and will not appear in the join at all, so a left join from an activity table will produce missing glucose rows for them.
+2.  `r n_dst_days` local date(s) cross a daylight-saving transition and are not 24 hours long, so the percent-of-expected column is not comparable on those dates.
+3.  `r n_missing_glucose_total` readings were excluded because the sensor reported `"Low"` or `"High"` rather than a number, which slightly understates time out of range.
+4.  `r n_flagged_tz` participant(s) were flagged for a timezone and clinical-site mismatch. `r if (n_flagged_tz == 0) "None currently require review." else "These must be resolved before their local timestamps are trusted in a join."`
+
+# Write CSV
+
+```{r}
+dir.create(
+  here("practice", "derived"),
+  recursive = TRUE,
+  showWarnings = FALSE
+)
+
+write_csv(
+  participant_day_summary,
+  here(
+    "practice",
+    "derived",
+    "week2_participant_day_cgm.csv"
+  ),
+  na = ""
+)
+```
