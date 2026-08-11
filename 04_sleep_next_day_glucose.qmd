@@ -24,12 +24,14 @@ execute:
 ```{r}
 rm(list = ls())
 
+library(conflicted)
 library(tidyverse)
 library(here)
 library(jsonlite)
 library(janitor)
 library(knitr)
 library(scales)
+library(broom)
 
 options(
   dplyr.summarise.inform = FALSE,
@@ -61,6 +63,11 @@ activity_input_path <- file.path(
   "week3_daily_activity.csv"
 )
 
+cgm_input_path <- file.path(
+  derived_dir,
+  "week2_participant_day_cgm.csv"
+)
+
 if (!file.exists(sleep_input_path) || !file.exists(activity_input_path)) {
   stop(
     "Run 03_sleep_activity_processing.qmd first; its two processed ",
@@ -76,19 +83,6 @@ resolve_data_path <- function(relative_path) {
 ## Define the analysis rules
 
 ```{r}
-next_day_window_hours <- 18
-expected_cgm_readings_per_hour <- 12
-minimum_cgm_coverage <- 0.70
-minimum_nights_per_participant <- 4
-minimum_sleep_minutes_for_analysis <- 2 * 60
-
-expected_readings_per_window <-
-  next_day_window_hours * expected_cgm_readings_per_hour
-
-minimum_readings_per_window <- ceiling(
-  minimum_cgm_coverage * expected_readings_per_window
-)
-
 study_group_labels <- c(
   healthy = "Healthy",
   pre_diabetes_lifestyle_controlled = "Pre-DM / lifestyle",
@@ -113,7 +107,8 @@ person_night_sleep <- read_csv(
     study_group_label = factor(
       study_group_label,
       levels = unname(study_group_labels)
-    )
+    ), 
+    date = date(wake_time_local)
   )
 
 daily_activity <- read_csv(
@@ -129,741 +124,203 @@ daily_activity <- read_csv(
     )
   )
 
-participants <- read_tsv(
-  file.path(data_dir, "participants.tsv"),
+person_day_cgm <- read_csv(
+  cgm_input_path,
   show_col_types = FALSE
 ) |>
-  clean_names() |>
-  mutate(person_id = as.character(person_id))
-
-cgm_manifest <- read_tsv(
-  file.path(data_dir, "wearable_blood_glucose", "manifest.tsv"),
-  show_col_types = FALSE
-) |>
-  clean_names() |>
-  mutate(person_id = as.character(person_id))
-```
-
-# Read and clean CGM
-
-## Read all CGM participants
-
-```{r}
-read_cgm_file <- function(person_id, relative_path) {
-  cgm_json <- fromJSON(
-    resolve_data_path(relative_path),
-    flatten = TRUE
-  )
-
-  cgm_body <- cgm_json$body$cgm
-
-  tibble(
+  mutate(
     person_id = as.character(person_id),
-    time_utc = ymd_hms(
-      cgm_body$effective_time_frame.time_interval.start_date_time,
-      tz = "UTC",
-      quiet = TRUE
-    ),
-    event_type = as.character(cgm_body$event_type),
-    glucose_original = as.character(cgm_body$blood_glucose.value),
-    glucose_mg_dl = suppressWarnings(
-      as.numeric(glucose_original)
-    ),
-    glucose_unit = as.character(cgm_body$blood_glucose.unit)
-  ) |>
-    filter(event_type == "EGV")
-}
+    date_local = as.Date(date_local)
+  )
 
-cgm_raw_egv <- map2_dfr(
-  cgm_manifest$person_id,
-  cgm_manifest$glucose_filepath,
-  read_cgm_file
-)
 ```
 
-## Apply the Week 2 cleaning rules needed here
+# Prepare and Join Inputs
+
+## Prepare Inputs
 
 ```{r}
-cgm_clean <- cgm_raw_egv |>
-  filter(
-    !is.na(time_utc),
-    !is.na(glucose_mg_dl),
-    glucose_unit == "mg/dL",
-    between(glucose_mg_dl, 40, 400)
+person_day_cgm <- person_day_cgm |> 
+  rename(date = date_local) |>
+  group_by(person_id, date) |>
+  mutate(
+    glucose_cv = (sd_glucose / mean_glucose) * 100
   ) |>
-  group_by(person_id, time_utc) |>
-  filter(n_distinct(glucose_mg_dl) == 1) |>
-  slice_head(n = 1) |>
+  ungroup()
+person_night_sleep <- person_night_sleep |> mutate(
+  bedtime_local = ymd_hms(bedtime_local), 
+  sleep_onset_local = ymd_hms(sleep_onset_local), 
+  final_sleep_end_local = ymd_hms(final_sleep_end_local),
+  wake_time_local = ymd_hms(wake_time_local)
+  )
+daily_activity <- daily_activity |>
+  select(!study_group) |> 
+  select(!clinical_site) |>
+  select(!study_group_label)
+glimpse(daily_activity)
+```
+
+## Find unmatched participant-dates
+
+```{r}
+dfs <- list(person_day_cgm = person_day_cgm, person_night_sleep = person_night_sleep, daily_activity = daily_activity)
+nms <- names(dfs)
+
+key_long <- dfs |>
+  map(\(d) d |>
+        mutate(date = as.Date(date)) |>
+        dplyr::filter(!is.na(person_id), !is.na(date)) |>
+        distinct(person_id, date)) |>
+  list_rbind(names_to = "source")
+
+incomplete <- key_long |>
+  summarise(sources = list(unique(source)), .by = c(person_id, "date")) |>
+  dplyr::filter(lengths(sources) < length(nms)) |>
+  mutate(
+    present_in   = map_chr(sources, str_flatten, collapse = ", "),
+    missing_from = map_chr(sources, \(s) str_flatten(setdiff(nms, s), ", "))
+  ) |>
+  select(person_id, date, present_in, missing_from) |>
+  arrange(person_id, date)
+
+glimpse(incomplete)
+
+bad_keys <- incomplete |>
+  select(person_id, date)
+
+dfs <- dfs |>
+  map(\(d) anti_join(d, bad_keys,
+                     by = join_by(person_id, date == date)))
+```
+
+## Join `inputs` on `person_id` and `date`
+
+```{r}
+data <- dfs$person_day_cgm |>
+  left_join(dfs$person_night_sleep, by = join_by(
+    person_id == person_id,
+    date == date
+  )) |>
+  left_join(dfs$daily_activity, by = join_by(
+    person_id == person_id, 
+    date == date
+  ))
+glimpse(data)
+```
+
+# Build the Participant-level Analysis Table
+
+## Build the table from `data` using `summarize()`
+
+```{r}
+participant_table <- data |>
   ungroup() |>
-  arrange(person_id, time_utc)
-
-tibble(
-  check = c(
-    "CGM participants",
-    "Raw EGV records",
-    "Usable unique CGM readings",
-    "Removed or collapsed records"
-  ),
-  result = c(
-    n_distinct(cgm_clean$person_id),
-    nrow(cgm_raw_egv),
-    nrow(cgm_clean),
-    nrow(cgm_raw_egv) - nrow(cgm_clean)
-  )
-) |>
-  kable(
-    col.names = c("CGM processing check", "Result"),
-    caption = "CGM records available for post-wake windows"
+  group_by(person_id) |>
+  summarize(
+    num_days                     = n(),
+    typical_sleep_dur_min        = median(total_sleep_time_minutes),
+    typical_daily_steps          = median(total_steps),
+    typical_daily_glucose_cv     = median(glucose_cv),
+    typical_daily_time_in_range  = median(pct_70_180) * 14.40,
+    .groups = "drop"
   )
 ```
 
-nonnumeric Dexcom `"Low"`/`"High"` strings, missing timestamps, non-mg/dL units, values outside the exercise bounds of 40--400 mg/dL, and conflicting duplicate timestamps are not used.
-
-# Build the linked person-night table
-
-## Summarize CGM after each wake time
-
-```{r}
-summarise_next_day_cgm <- function(person_id, wake_time_utc) {
-  window_end_utc <- wake_time_utc + hours(next_day_window_hours)
-
-  window_readings <- cgm_clean |>
-    filter(
-      .data$person_id == person_id,
-      time_utc >= wake_time_utc,
-      time_utc < window_end_utc
-    )
-
-  number_of_readings <- nrow(window_readings)
-  coverage_percent <-
-    100 * number_of_readings / expected_readings_per_window
-  valid_window <-
-    number_of_readings >= minimum_readings_per_window
-
-  if (!valid_window) {
-    return(
-      tibble(
-        next_day_window_end_utc = window_end_utc,
-        next_day_cgm_readings = number_of_readings,
-        next_day_cgm_coverage_percent = coverage_percent,
-        valid_next_day_cgm = FALSE,
-        next_day_mean_glucose = NA_real_,
-        next_day_peak_glucose = NA_real_,
-        next_day_glucose_sd = NA_real_,
-        next_day_glucose_cv_percent = NA_real_,
-        next_day_time_in_range_percent = NA_real_,
-        next_day_time_above_180_percent = NA_real_,
-        next_day_time_below_70_percent = NA_real_
-      )
-    )
-  }
-
-  mean_glucose <- mean(window_readings$glucose_mg_dl)
-  glucose_sd <- sd(window_readings$glucose_mg_dl)
-
-  tibble(
-    next_day_window_end_utc = window_end_utc,
-    next_day_cgm_readings = number_of_readings,
-    next_day_cgm_coverage_percent = coverage_percent,
-    valid_next_day_cgm = TRUE,
-    next_day_mean_glucose = mean_glucose,
-    next_day_peak_glucose = max(window_readings$glucose_mg_dl),
-    next_day_glucose_sd = glucose_sd,
-    next_day_glucose_cv_percent =
-      100 * glucose_sd / mean_glucose,
-    next_day_time_in_range_percent = 100 * mean(
-      between(window_readings$glucose_mg_dl, 70, 180)
-    ),
-    next_day_time_above_180_percent = 100 * mean(
-      window_readings$glucose_mg_dl > 180
-    ),
-    next_day_time_below_70_percent = 100 * mean(
-      window_readings$glucose_mg_dl < 70
-    )
-  )
-}
-
-sleep_cgm_candidates <- person_night_sleep |>
-  filter(person_id %in% cgm_manifest$person_id) |>
-  mutate(
-    sleep_data_quality_ok =
-      total_sleep_time_minutes >= minimum_sleep_minutes_for_analysis
-  )
-
-next_day_cgm_features <- pmap_dfr(
-  sleep_cgm_candidates |>
-    select(person_id, wake_time_utc),
-  summarise_next_day_cgm
-)
-
-linked_person_night <- bind_cols(
-  sleep_cgm_candidates,
-  next_day_cgm_features
-) |>
-  left_join(
-    daily_activity |>
-      select(
-        person_id,
-        activity_date = date,
-        total_steps,
-        active_calories,
-        average_heart_rate_bpm,
-        step_observation_hours,
-        valid_activity_day
-      ),
-    by = c(
-      "person_id",
-      "sleep_night" = "activity_date"
-    )
-  ) |>
-  mutate(
-    activity_available = !is.na(total_steps),
-    valid_activity_day = coalesce(valid_activity_day, FALSE)
-  ) |>
-  arrange(person_id, sleep_night)
-
-linked_output_path <- file.path(
-  derived_dir,
-  "week4_sleep_next_day_linked.csv"
-)
-
-write_csv(linked_person_night, linked_output_path, na = "")
-```
-
-## Linkage checks
-
-```{r}
-linked_key_duplicates <- linked_person_night |>
-  count(person_id, sleep_night) |>
-  filter(n > 1) |>
-  nrow()
-
-tibble(
-  check = c(
-    "Sleep nights among CGM participants",
-    "Nights with analysis-quality sleep",
-    "Nights with valid next-day CGM",
-    "Nights with complete same-day activity",
-    "Participants with any valid linked night",
-    "Duplicate person-night keys"
-  ),
-  result = c(
-    nrow(linked_person_night),
-    sum(linked_person_night$sleep_data_quality_ok),
-    sum(linked_person_night$valid_next_day_cgm),
-    sum(linked_person_night$valid_activity_day),
-    linked_person_night |>
-      filter(
-        sleep_data_quality_ok,
-        valid_next_day_cgm
-      ) |>
-      summarise(n = n_distinct(person_id)) |>
-      pull(n),
-    linked_key_duplicates
-  )
-) |>
-  kable(
-    col.names = c("Linkage check", "Result"),
-    caption = "Person-night linkage quality control"
-  )
-```
+We use `median()` here because the data is likely to be skewed and asymmetric, making it less suitable for `mean()`.
 
 ## Preview the analysis table
 
 ```{r}
-linked_person_night |>
-  filter(valid_next_day_cgm) |>
-  select(
-    person_id,
-    sleep_night,
-    total_sleep_time_minutes,
-    sleep_efficiency_percent,
-    awake_after_sleep_onset_minutes,
-    next_day_cgm_readings,
-    next_day_cgm_coverage_percent,
-    next_day_mean_glucose,
-    next_day_peak_glucose,
-    next_day_time_in_range_percent,
-    total_steps,
-    active_calories,
-    average_heart_rate_bpm,
-    valid_activity_day,
-    study_group_label
-  ) |>
-  slice_head(n = 12) |>
-  mutate(
-    across(
-      where(is.numeric),
-      ~ round(.x, 1)
-    )
-  ) |>
-  kable(
-    col.names = c(
-      "Participant",
-      "Wake date",
-      "TST (min)",
-      "Efficiency (%)",
-      "WASO (min)",
-      "CGM readings",
-      "CGM coverage (%)",
-      "Next-day mean",
-      "Next-day peak",
-      "Next-day TIR (%)",
-      "Steps",
-      "Active calories",
-      "Average HR",
-      "Complete activity",
-      "Study group"
-    ),
-    caption = "First 12 valid linked person-nights"
+kable(
+  head(participant_table), 
+  col.names = c("ID", 
+                "Days", 
+                "Typical Sleep Duration", 
+                "Typical Daily Steps", 
+                "Typical Daily Glucose CV", 
+                "Typical Daily Time In Range"), 
+  align = "cccccc", 
+  digits = 2, 
+  caption = "First Six Rows of the Participant Analysis Table"
   )
 ```
 
-The complete linkage table retains nights with insufficient CGM or incomplete activity and marks their status rather than deleting them. It is saved as `practice/derived/week4_sleep_next_day_linked.csv`.
+# Create Participant Level Plots
 
-# Define worse and better sleep within participants
+## Seep Duration vs. Glucose CV
 
 ```{r}
-analysis_nights <- linked_person_night |>
-  filter(
-    sleep_data_quality_ok,
-    valid_next_day_cgm
-  ) |>
-  group_by(person_id) |>
-  filter(n() >= minimum_nights_per_participant) |>
-  mutate(
-    person_median_sleep_minutes = median(
-      total_sleep_time_minutes,
-      na.rm = TRUE
-    ),
-    sleep_group = if_else(
-      total_sleep_time_minutes < person_median_sleep_minutes,
-      "worse",
-      "better"
-    )
-  ) |>
-  filter(n_distinct(sleep_group) == 2) |>
-  ungroup() |>
-  mutate(
-    sleep_group = factor(
-      sleep_group,
-      levels = c("better", "worse")
-    ),
-    study_group_label = factor(
-      study_group_label,
-      levels = unname(study_group_labels)
-    )
+#| message: false
+#| warning: false
+participant_table |>
+ggplot(
+  aes(
+    x = typical_sleep_dur_min,
+    y = typical_daily_glucose_cv
   )
+) + 
+  geom_point() + 
+  geom_smooth() + 
+  labs(x = "Typical Sleep Duration (minutes)", y = "Typical Daily Glucose CV")
 
-paired_sleep_summary <- analysis_nights |>
-  group_by(
-    person_id,
-    study_group,
-    study_group_label,
-    sleep_group
-  ) |>
-  summarise(
-    number_of_nights = n(),
-    mean_sleep_hours =
-      mean(total_sleep_time_minutes) / 60,
-    next_day_mean_glucose =
-      mean(next_day_mean_glucose),
-    next_day_peak_glucose =
-      mean(next_day_peak_glucose),
-    next_day_time_in_range_percent =
-      mean(next_day_time_in_range_percent),
-    next_day_time_above_180_percent =
-      mean(next_day_time_above_180_percent),
-    .groups = "drop"
+correlation_data_sleep <- tidy(cor.test(
+  participant_table$typical_sleep_dur_min, 
+  participant_table$typical_daily_glucose_cv, 
+  method = "spearman"
+  )) |>
+  select(estimate, p.value) |>
+  mutate(num_participants = nrow(participant_table))
+
+kable(
+  correlation_data_sleep, 
+  col.names = c("Spearman Estimate", "P Value", "Participant Count"),
+  align = "ccc",
+  digits = 3
   )
-
-paired_differences <- paired_sleep_summary |>
-  pivot_wider(
-    names_from = sleep_group,
-    values_from = c(
-      number_of_nights,
-      mean_sleep_hours,
-      next_day_mean_glucose,
-      next_day_peak_glucose,
-      next_day_time_in_range_percent,
-      next_day_time_above_180_percent
-    )
-  ) |>
-  filter(
-    !is.na(next_day_mean_glucose_better),
-    !is.na(next_day_mean_glucose_worse)
-  ) |>
-  mutate(
-    sleep_duration_gap_hours =
-      mean_sleep_hours_better - mean_sleep_hours_worse,
-    mean_glucose_difference =
-      next_day_mean_glucose_worse -
-        next_day_mean_glucose_better,
-    peak_glucose_difference =
-      next_day_peak_glucose_worse -
-        next_day_peak_glucose_better,
-    time_in_range_difference =
-      next_day_time_in_range_percent_worse -
-        next_day_time_in_range_percent_better,
-    time_above_180_difference =
-      next_day_time_above_180_percent_worse -
-        next_day_time_above_180_percent_better
-  )
-
-paired_output_path <- file.path(
-  derived_dir,
-  "week4_paired_participant_differences.csv"
-)
-
-write_csv(paired_differences, paired_output_path, na = "")
 ```
 
-The primary difference is:
+As seen in the `geom_smooth()` line, the relationship between sleep duration and glucose CV is very small. This is also reflected by the Spearman estimate, `{r} correlation_data_sleep$estimate`, which is near zero, showing that any linear correlation, if extant, is very weak. In addition, the p value is `{r} correlation_data_sleep$p.value`, which is near 1, meaning that there is no strong evidence that any correlation exists. The sample size is also relatively large, `{r} correlation_data_sleep$num_participants`, so the results should not be because of a small sample size.
 
-> Mean next-day glucose after worse-sleep nights minus mean next-day glucose after better-sleep nights.
-
-A positive difference means higher next-day mean glucose after shorter sleep for that participant. A negative difference means lower next-day mean glucose after shorter sleep.
+## Daily Steps vs. Glucose CV
 
 ```{r}
-paired_differences |>
-  select(
-    person_id,
-    study_group_label,
-    number_of_nights_better,
-    number_of_nights_worse,
-    mean_sleep_hours_better,
-    mean_sleep_hours_worse,
-    next_day_mean_glucose_better,
-    next_day_mean_glucose_worse,
-    mean_glucose_difference
-  ) |>
-  slice_head(n = 15) |>
-  mutate(
-    across(
-      where(is.numeric),
-      ~ round(.x, 1)
-    )
-  ) |>
-  kable(
-    col.names = c(
-      "Participant",
-      "Study group",
-      "Better nights",
-      "Worse nights",
-      "Better sleep (h)",
-      "Worse sleep (h)",
-      "Glucose after better",
-      "Glucose after worse",
-      "Difference (worse - better)"
-    ),
-    caption = "First 15 within-participant paired summaries"
+#| message: false
+#| warning: false
+participant_table |>
+ggplot(
+  aes(
+    x = typical_daily_steps,
+    y = typical_daily_glucose_cv
+  )
+) + 
+  geom_point() + 
+  geom_smooth() + 
+  labs(x = "Typical Daily Steps", y = "Typical Daily Glucose CV")
+
+correlation_data_steps <- tidy(cor.test(
+  participant_table$typical_daily_steps, 
+  participant_table$typical_daily_glucose_cv, 
+  method = "spearman"
+  )) |>
+  select(estimate, p.value) |>
+  mutate(num_participants = nrow(participant_table))
+
+kable(
+  correlation_data_steps, 
+  col.names = c("Spearman Estimate", "P Value", "Participant Count"),
+  align = "ccc",
+  digits = 3
   )
 ```
 
-The complete paired table contains `r nrow(paired_differences)` participants and is saved as `practice/derived/week4_paired_participant_differences.csv`.
+Here, The `geom_smooth()` line is mostly flat, but it shows a bump where the data points are densest. This indicates a very small correlation, and the Spearman estimate confirms this, with `{r} correlation_data_steps$estimate` being very close to zero. The p-value, `{r} correlation_data_steps$p.value`, is very close to being significant, but falls short. This indicates that the relationship has a possibility of existing, but it cannot be determined that it is not random luck. Again, the participant count of `{r} correlation_data_steps$num_participants` should be enough to confirm any relationships within the data.
 
-# Required plots
+# Interpretation
 
-## Slopegraph: better versus worse sleep
+## Which association is stronger in absolute magnitude?
 
-```{r}
-#| fig-width: 9
-#| fig-height: 6
+The association between daily steps and glucose CV is stronger than that between sleep duration and glucose CV(`{r} abs(correlation_data_steps$estimate)` > `{r} abs(correlation_data_sleep$estimate)`).
 
-paired_sleep_summary |>
-  filter(person_id %in% paired_differences$person_id) |>
-  mutate(
-    sleep_group = factor(
-      sleep_group,
-      levels = c("better", "worse"),
-      labels = c("Better sleep", "Worse sleep")
-    )
-  ) |>
-  ggplot(
-    aes(
-      x = sleep_group,
-      y = next_day_mean_glucose,
-      group = person_id
-    )
-  ) +
-  geom_line(
-    color = "#7A7F87",
-    alpha = 0.65,
-    linewidth = 0.7
-  ) +
-  geom_point(
-    aes(color = study_group_label),
-    size = 2.7
-  ) +
-  scale_color_manual(
-    values = c(
-      "Healthy" = "#2C6E9B",
-      "Pre-DM / lifestyle" = "#C47B22",
-      "Oral/non-insulin medication" = "#8A3F69",
-      "Insulin-dependent" = "#6B7D3A"
-    ),
-    drop = FALSE
-  ) +
-  labs(
-    title = "Next-day mean glucose after better- and worse-sleep nights",
-    subtitle = "Each line is one participant; sleep groups are defined by that participant's own median total sleep time.",
-    x = NULL,
-    y = "Mean glucose in the 18-hour post-wake window (mg/dL)",
-    color = "Study group"
-  ) +
-  theme(legend.position = "bottom")
-```
+## What does the direction of each correlation mean?
 
-## Boxplot of within-person glucose differences
-
-```{r}
-#| fig-width: 7
-#| fig-height: 5
-
-set.seed(20260728)
-
-paired_differences |>
-  ggplot(
-    aes(
-      x = "All paired participants",
-      y = mean_glucose_difference
-    )
-  ) +
-  geom_hline(
-    yintercept = 0,
-    linetype = "dashed",
-    color = "#555555"
-  ) +
-  geom_boxplot(
-    width = 0.35,
-    fill = "#DDEAF7",
-    color = "#2C6E9B",
-    outlier.shape = NA
-  ) +
-  geom_jitter(
-    width = 0.08,
-    height = 0,
-    color = "#2C6E9B",
-    size = 2.3,
-    alpha = 0.8
-  ) +
-  labs(
-    title = "Within-person difference in next-day mean glucose",
-    subtitle = str_wrap(
-      "Difference = worse-sleep minus better-sleep; positive values indicate higher glucose after shorter sleep.",
-      width = 80
-    ),
-    x = NULL,
-    y = "Mean glucose difference (mg/dL)"
-  )
-```
-
-## Differences stratified by study group
-
-```{r}
-#| fig-width: 10
-#| fig-height: 6
-
-set.seed(20260728)
-
-paired_differences |>
-  ggplot(
-    aes(
-      x = study_group_label,
-      y = mean_glucose_difference
-    )
-  ) +
-  geom_hline(
-    yintercept = 0,
-    linetype = "dashed",
-    color = "#555555"
-  ) +
-  geom_boxplot(
-    width = 0.5,
-    fill = "#E9EEF3",
-    color = "#454B52",
-    outlier.shape = NA
-  ) +
-  geom_jitter(
-    aes(color = study_group_label),
-    width = 0.12,
-    height = 0,
-    size = 2.5,
-    alpha = 0.85
-  ) +
-  scale_color_manual(
-    values = c(
-      "Healthy" = "#2C6E9B",
-      "Pre-DM / lifestyle" = "#C47B22",
-      "Oral/non-insulin medication" = "#8A3F69",
-      "Insulin-dependent" = "#6B7D3A"
-    ),
-    drop = FALSE
-  ) +
-  labs(
-    title = "Within-person glucose differences by AI-READI study group",
-    subtitle = "Points are participants, not nights; small group counts make this descriptive only.",
-    x = NULL,
-    y = "Mean glucose difference, worse - better sleep (mg/dL)"
-  ) +
-  theme(
-    legend.position = "none",
-    axis.text.x = element_text(angle = 18, hjust = 1)
-  )
-```
-
-## Example participant: sleep nights and next-day glucose
-
-```{r}
-example_participant <- analysis_nights |>
-  count(person_id, name = "number_of_eligible_nights") |>
-  arrange(desc(number_of_eligible_nights), person_id) |>
-  slice_head(n = 1) |>
-  pull(person_id)
-
-example_nights <- analysis_nights |>
-  filter(person_id == example_participant) |>
-  arrange(sleep_night) |>
-  mutate(
-    monitoring_episode = cumsum(
-      is.na(lag(sleep_night)) |
-        as.numeric(sleep_night - lag(sleep_night)) > 14
-    )
-  )
-
-example_plot_data <- bind_rows(
-  example_nights |>
-    transmute(
-      sleep_night,
-      sleep_group,
-      monitoring_episode,
-      metric = "Previous-night total sleep time (hours)",
-      value = total_sleep_time_minutes / 60
-    ),
-  example_nights |>
-    transmute(
-      sleep_night,
-      sleep_group,
-      monitoring_episode,
-      metric = "Next-day mean glucose (mg/dL)",
-      value = next_day_mean_glucose
-    )
-) |>
-  mutate(
-    metric = factor(
-      metric,
-      levels = c(
-        "Previous-night total sleep time (hours)",
-        "Next-day mean glucose (mg/dL)"
-      )
-    )
-  )
-
-example_sleep_reference <- tibble(
-  metric = factor(
-    "Previous-night total sleep time (hours)",
-    levels = levels(example_plot_data$metric)
-  ),
-  reference = unique(
-    example_nights$person_median_sleep_minutes
-  ) / 60
-)
-```
-
-```{r}
-#| fig-width: 10
-#| fig-height: 7
-
-example_plot_data |>
-  ggplot(
-    aes(
-      x = sleep_night,
-      y = value
-    )
-  ) +
-  geom_hline(
-    data = example_sleep_reference,
-    aes(yintercept = reference),
-    linetype = "dashed",
-    color = "#555555",
-    inherit.aes = FALSE
-  ) +
-  geom_line(
-    aes(group = interaction(metric, monitoring_episode)),
-    color = "#8A9097",
-    linewidth = 0.6
-  ) +
-  geom_point(
-    aes(color = sleep_group),
-    size = 3
-  ) +
-  facet_wrap(
-    ~ metric,
-    ncol = 1,
-    scales = "free_y"
-  ) +
-  scale_color_manual(
-    values = c(
-      better = "#2C6E9B",
-      worse = "#C47B22"
-    ),
-    labels = c(
-      better = "Better sleep",
-      worse = "Worse sleep"
-    )
-  ) +
-  scale_x_date(
-    breaks = breaks_pretty(n = 6),
-    date_labels = "%b %d"
-  ) +
-  labs(
-    title = paste(
-      "Sleep and next-day glucose for participant",
-      example_participant
-    ),
-    subtitle = str_wrap(
-      "Participant selected by the greatest number of eligible nights; dashed line is their median sleep duration.",
-      width = 90
-    ),
-    x = "Wake-up date",
-    y = NULL,
-    color = NULL
-  ) +
-  theme(
-    legend.position = "bottom",
-    axis.text.x = element_text(angle = 30, hjust = 1)
-  )
-```
-
-# Results in plain language
-
-```{r}
-median_glucose_difference <- median(
-  paired_differences$mean_glucose_difference,
-  na.rm = TRUE
-)
-
-glucose_difference_iqr <- quantile(
-  paired_differences$mean_glucose_difference,
-  c(0.25, 0.75),
-  na.rm = TRUE
-)
-
-share_positive_difference <- mean(
-  paired_differences$mean_glucose_difference > 0,
-  na.rm = TRUE
-)
-
-median_sleep_gap <- median(
-  paired_differences$sleep_duration_gap_hours,
-  na.rm = TRUE
-)
-```
-
-The paired analysis retained `r nrow(paired_differences)` participants and `r nrow(analysis_nights)` person-nights. On average within a participant's two categories, better-sleep nights were separated from worse-sleep nights by a median of `r round(median_sleep_gap, 1)` hours.
-
-The median within-person next-day mean-glucose difference was `r round(median_glucose_difference, 1)` mg/dL (interquartile range `r round(glucose_difference_iqr[1], 1)` to `r round(glucose_difference_iqr[2], 1)` mg/dL), and `r percent(share_positive_difference, accuracy = 1)` of paired participants had a positive difference. These values describe this small public-data sample; they are not an estimate of a causal sleep effect.
-
-# Limitations
-
-This analysis is observational and supports **no causal claim**: shorter sleep may accompany stress, illness, schedule changes, or other factors that may also affect glucose. The public data does not provide meal timestamps, so post-meal glucose responses cannot be separated from other next-day variation. Medication timing is not fully available in the public data, which prevents alignment of doses with the CGM window. Dexcom CGM and Garmin sleep/activity measurements are consumer or wearable measurements rather than laboratory gold standards; Garmin sleep stages in particular are imperfect estimates. Finally, AI-READI is cross-sectional, with only a short monitoring period per participant, so the analysis cannot establish long-term direction, prediction, or clinical outcomes.
+The association of daily steps and glucose CV is negative(`{r} correlation_data_steps$estimate` < 0), meaning that as daily steps increase, glucose CV should decrease. On the other hand, the association between sleep duration and glucose CV is positive(`{r} correlation_data_sleep$estimate` > 0), meaning that as sleep duration increases, glucose CV should increase.

@@ -106,7 +106,8 @@ library(scales)
 
 ## Replace this with your own path to the AI-READI dataset.
 Sys.setenv(
-    AIREADI_DATA_DIR = "/Users/tt/Library/CloudStorage/Box-Box/ai-readi/v3-mini/dataset"
+    AIREADI_DATA_DIR = "/Users/tt/Library/CloudStorage/Box-Box/ai-readi/v3-mini/dataset", 
+    REBUILD_WEEK3_FROM_RAW = TRUE
 )
 
 # Set global options
